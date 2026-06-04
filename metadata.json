@@ -1,0 +1,6 @@
+{
+  "name": "Verilog FPGA Dashboard",
+  "description": "A workspace template for Verilog development. Includes Makefiles for Icarus/GTKWave, test automation, and Quartus initialization for EP4CE55F23I7N.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

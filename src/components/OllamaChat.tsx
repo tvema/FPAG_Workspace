@@ -1,0 +1,358 @@
+import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Send, Bot, User, Settings, Loader2, AlertCircle, Save, GitMerge } from 'lucide-react';
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+const CodeBlock = ({ lang, code, onAddFile, onProposeMerge }: { lang: string, code: string, onAddFile: (p: string, c: string) => void, onProposeMerge: (code: string) => void }) => {
+    const [isSaving, setIsSaving] = useState(false);
+    const [path, setPath] = useState(`verilog/src/new_module.v`);
+
+    return (
+        <div className="my-3 border border-white/10 rounded-lg overflow-hidden bg-[#0c0c0e]">
+            <div className="bg-white/5 px-3 py-2 flex flex-wrap justify-between items-center text-xs text-slate-400 border-b border-white/10 gap-2">
+                <span>{lang || 'code'}</span>
+                {!isSaving ? (
+                    <div className="flex gap-2">
+                        <button onClick={() => onProposeMerge(code)} className="flex items-center gap-1.5 hover:text-white transition-colors text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20">
+                            <GitMerge className="w-3.5 h-3.5" /> Merge with active
+                        </button>
+                        <button onClick={() => setIsSaving(true)} className="flex items-center gap-1.5 hover:text-white transition-colors text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded border border-indigo-500/20 hover:bg-indigo-500/20">
+                            <Save className="w-3.5 h-3.5" /> Save New
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-2">
+                        <input 
+                            type="text" 
+                            value={path} 
+                            onChange={e => setPath(e.target.value)}
+                            className="bg-black/50 border border-white/20 rounded px-2 py-1 text-white w-48 text-[11px] focus:outline-none focus:border-indigo-500"
+                            placeholder="verilog/src/module.v"
+                            autoFocus
+                        />
+                        <button onClick={() => { onAddFile(path, code); setIsSaving(false); }} className="text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1 rounded hover:bg-emerald-500/10 transition-colors">
+                            Save
+                        </button>
+                        <button onClick={() => setIsSaving(false)} className="text-slate-500 hover:text-slate-300 px-2 py-1 transition-colors">
+                            Cancel
+                        </button>
+                    </div>
+                )}
+            </div>
+            <pre className="p-3 overflow-x-auto text-[12px] font-mono text-slate-300 selection:bg-emerald-500/30">
+                {code}
+            </pre>
+        </div>
+    );
+};
+
+function MessageContent({ content, onAddFile, onProposeMerge }: { content: string, onAddFile: (path: string, content: string) => void, onProposeMerge: (code: string) => void }) {
+    const parts = content.split(/(```[\s\S]*?```)/g);
+    
+    return (
+        <div className="text-[13px] leading-relaxed whitespace-pre-wrap">
+            {parts.map((part, i) => {
+                if (part.startsWith('```') && part.endsWith('```')) {
+                    const lines = part.split('\n');
+                    const lang = lines[0].slice(3).trim();
+                    const code = lines.slice(1, -1).join('\n');
+                    return <CodeBlock key={i} lang={lang} code={code} onAddFile={onAddFile} onProposeMerge={onProposeMerge} />;
+                }
+                return <span key={i}>{part}</span>;
+            })}
+        </div>
+    );
+}
+
+export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any> }) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  
+  // Settings
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+  const [model, setModel] = useState(() => {
+    const cached = localStorage.getItem('gemini_model');
+    return (!cached || cached === 'gemini-2.0-flash' || cached === 'gemini-1.5-flash' || cached === 'gemini-2.5-flash' || String(cached).includes('llama')) ? 'gemini-3.5-flash' : cached;
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    localStorage.setItem('gemini_api_key', apiKey);
+  }, [apiKey]);
+
+  useEffect(() => {
+    localStorage.setItem('gemini_model', model);
+  }, [model]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading]);
+
+  useEffect(() => {
+    if (activeFileId) {
+      fetch(`/api/messages/${activeFileId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setMessages(data);
+          }
+        })
+        .catch(err => console.error("Failed to load messages", err));
+    } else {
+      setMessages([]);
+    }
+  }, [activeFileId]);
+
+  const saveMessage = async (role: string, content: string) => {
+    if (!activeFileId) return;
+    try {
+      await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_id: activeFileId, role, content })
+      });
+    } catch (err) {
+      console.error("Failed to save message", err);
+    }
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
+
+    const userMessage = input.trim();
+    setInput('');
+    setError(null);
+    
+    // Add file context to system prompt if available
+    let promptPrefix = "";
+    if (projectContext) {
+      promptPrefix += `[Global Project Context / Instructions:\n\`\`\`\n${projectContext}\n\`\`\`\n]\n\n`;
+    }
+
+    // Extract file references from the message (e.g. {verilog/src/file.v})
+    const referenceRegex = /\{([^}]+)\}/g;
+    const matches = [...userMessage.matchAll(referenceRegex)];
+    const referencedPaths = [...new Set(matches.map(m => m[1].trim()))];
+    
+    if (referencedPaths.length > 0 && allFiles) {
+      promptPrefix += `[Referenced Files Context:]\n`;
+      Object.values(allFiles).forEach((f: any) => {
+        if (referencedPaths.includes(f.path) || referencedPaths.includes(f.name)) {
+          promptPrefix += `\n--- START OF REFERENCED FILE: ${f.path} ---\n\`\`\`\n${f.content}\n\`\`\`\n--- END OF REFERENCED FILE ---\n`;
+        }
+      });
+      promptPrefix += `\n`;
+    }
+
+    if (activeFilePath) {
+      promptPrefix += `[Context: User is currently working on file: ${activeFilePath}]\n`;
+      if (activeFileContent) {
+        promptPrefix += `[Current File Content:\n\`\`\`\n${activeFileContent}\n\`\`\`\n]\n[Instruction: Below is the user's request. Modify the code to fulfill the request. When providing the updated code, please output the FULL file content with your changes integrated, preserving the rest of the existing code so it can be directly merged.]\n\n`;
+      }
+    }
+
+    const newMessageObj: Message = { role: 'user', content: userMessage };
+    const newMessages = [...messages, newMessageObj];
+    setMessages(newMessages);
+    setIsLoading(true);
+
+    await saveMessage('user', userMessage);
+
+    // Prepare API messages 
+    const apiMessages = [...newMessages];
+    if (promptPrefix && apiMessages.length > 0) {
+      // temporarily prepend context to the last message for the API call
+      const lastMsg = apiMessages[apiMessages.length - 1];
+      apiMessages[apiMessages.length - 1] = { ...lastMsg, content: promptPrefix + lastMsg.content };
+    }
+
+    try {
+      const response = await fetch(`/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model.trim() || 'gemini-3.5-flash',
+          apiKey: apiKey.trim() || undefined,
+          messages: apiMessages,
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) {
+        let errorMsg = `HTTP error! status: ${response.status}`;
+        try {
+           const errData = await response.json();
+           if (errData.error) errorMsg = errData.error;
+        } catch(e) {}
+        throw new Error(errorMsg);
+      }
+
+      const data = await response.json();
+      
+      if (data.message) {
+        setMessages(prev => [...prev, data.message]);
+        await saveMessage(data.message.role, data.message.content);
+      } else {
+        throw new Error('Invalid response format from server');
+      }
+    } catch (err: any) {
+      console.error('AI Error:', err);
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-[#16161a]">
+      {/* Header */}
+      <div className="h-14 border-b border-white/5 flex items-center justify-between px-4 bg-[#121214] shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="bg-indigo-500/20 p-1.5 rounded-md border border-indigo-500/30">
+            <Bot className="w-4 h-4 text-indigo-400" />
+          </div>
+          <h2 className="text-sm font-semibold text-slate-200">AI Assistant</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setShowSettings(!showSettings)}
+            className={`p-1.5 rounded-md transition-colors ${showSettings ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Settings Panel */}
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div 
+            initial={{ height: 0 }}
+            animate={{ height: 'auto' }}
+            exit={{ height: 0 }}
+            className="overflow-hidden border-b border-white/5 bg-[#1a1a1f]"
+          >
+            <div className="p-4 space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">Gemini API Key (Optional)</label>
+                <input 
+                  type="password" 
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="w-full bg-black/20 border border-white/10 rounded-md px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50"
+                  placeholder="Paste your key to bypass server limits"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">Model Name</label>
+                <input 
+                  type="text" 
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="w-full bg-black/20 border border-white/10 rounded-md px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50"
+                  placeholder="e.g. gemini-3.5-flash"
+                />
+              </div>
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-md p-3">
+                <h4 className="text-xs font-semibold text-amber-400 flex items-center gap-1.5 mb-1">
+                  <AlertCircle className="w-3.5 h-3.5" /> API Proxy
+                </h4>
+                <p className="text-[11px] text-amber-200/70 leading-relaxed">
+                  Requests are proxied securely to Gemini. Adding your own key above prevents rate limit errors.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center opacity-50">
+            <Bot className="w-12 h-12 text-slate-500 mb-2" />
+            <p className="text-sm text-slate-400 max-w-[200px]">Ask the AI to refactor code or add new logic.</p>
+          </div>
+        ) : (
+          messages.map((msg, i) => (
+            <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+              <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
+                msg.role === 'user' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-emerald-500/20 text-emerald-400'
+              }`}>
+                {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+              </div>
+              <div className={`max-w-[85%] ${
+                msg.role === 'user' 
+                  ? 'bg-indigo-500/10 text-indigo-100/90 whitespace-pre-wrap text-[13px] leading-relaxed p-3 rounded-lg' 
+                  : 'text-slate-300 w-full'
+              }`}>
+                {msg.role === 'user' ? msg.content : <MessageContent content={msg.content} onAddFile={onAddFile} onProposeMerge={onProposeMerge} />}
+              </div>
+            </div>
+          ))
+        )}
+        {isLoading && (
+          <div className="flex gap-3">
+            <div className="w-7 h-7 rounded-md bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <Bot className="w-4 h-4" />
+            </div>
+            <div className="bg-white/5 text-slate-400 p-3 rounded-lg flex items-center gap-2 text-[13px]">
+              <Loader2 className="w-3 h-3 animate-spin" /> Thinking...
+            </div>
+          </div>
+        )}
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-lg flex items-start gap-2">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span className="whitespace-pre-wrap">{error}</span>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input */}
+      <div className="p-4 bg-[#121214] border-t border-white/5 shrink-0">
+        <div className="relative flex items-end gap-2 bg-[#1a1a1f] p-2 rounded-xl border border-white/10 focus-within:border-indigo-500/50 transition-colors">
+          <textarea 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask AI..."
+            className="w-full bg-transparent resize-none text-[13px] text-slate-200 placeholder:text-slate-600 focus:outline-none min-h-[40px] max-h-32 py-2 px-2"
+            rows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 5) : 1}
+          />
+          <button 
+            onClick={handleSend}
+            disabled={!input.trim() || isLoading}
+            className="p-2 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:hover:bg-indigo-500 text-white rounded-lg transition-colors shrink-0 mb-0.5"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="text-[10px] text-slate-500 text-center mt-2">
+          Powered by Google Gemini.
+        </div>
+      </div>
+    </div>
+  );
+}
