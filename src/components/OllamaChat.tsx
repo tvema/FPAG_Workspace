@@ -74,6 +74,7 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   const [showSettings, setShowSettings] = useState(false);
   
   // Settings
+  const [provider, setProvider] = useState(() => localStorage.getItem('ai_provider') || 'gemini_server');
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [proxy, setProxy] = useState(() => localStorage.getItem('gemini_http_proxy') || '');
   const [model, setModel] = useState(() => {
@@ -118,6 +119,10 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   useEffect(() => {
     localStorage.setItem('gemini_api_key', apiKey);
   }, [apiKey]);
+
+  useEffect(() => {
+    localStorage.setItem('ai_provider', provider);
+  }, [provider]);
 
   useEffect(() => {
     localStorage.setItem('gemini_http_proxy', proxy);
@@ -210,34 +215,68 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
     }
 
     try {
-      const response = await fetch(`/api/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: effectiveModel.trim() || undefined,
-          apiKey: effectiveApiKey.trim() || undefined,
-          proxy: effectiveProxy.trim() || undefined,
-          messages: apiMessages,
-          stream: false,
-        }),
-      });
-
-      if (!response.ok) {
-        let errorMsg = `HTTP error! status: ${response.status}`;
-        try {
-           const errData = await response.json();
-           if (errData.error) errorMsg = errData.error;
-        } catch(e) {}
-        throw new Error(errorMsg);
-      }
-
-      const data = await response.json();
+      let dataMsg = null;
       
-      if (data.message) {
-        setMessages(prev => [...prev, data.message]);
-        await saveMessage(data.message.role, data.message.content);
+      if (provider === 'gemini_client') {
+          if (!effectiveApiKey) {
+             throw new Error("API Key is required for client-side Gemini requests.");
+          }
+          const geminiModel = effectiveModel.trim() || 'gemini-2.5-flash';
+          const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${effectiveApiKey}`;
+          
+          const geminiContents = apiMessages.map((m: any) => ({
+              role: m.role === 'assistant' ? 'model' : 'user',
+              parts: [{ text: m.content }]
+          }));
+          
+          // Allow client proxy to solve CORS if necessary
+          const fetchUrl = effectiveProxy ? `${effectiveProxy.replace(/\/$/, '')}/v1beta/models/${geminiModel}:generateContent?key=${effectiveApiKey}` : apiUrl;
+
+          const response = await fetch(fetchUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: geminiContents })
+          });
+          
+          if (!response.ok) {
+             const errData = await response.json();
+             throw new Error(`Gemini API Error: ${errData?.error?.message || response.statusText}`);
+          }
+          const data = await response.json();
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          dataMsg = { role: 'assistant', content: text };
+      } else {
+          // Server Proxy (Ollama or Gemini)
+          const response = await fetch(`/api/chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              provider,
+              model: effectiveModel.trim() || undefined,
+              apiKey: effectiveApiKey.trim() || undefined,
+              proxy: effectiveProxy.trim() || undefined,
+              messages: apiMessages,
+              stream: false,
+            }),
+          });
+          if (!response.ok) {
+            let errorMsg = `HTTP error! status: ${response.status}`;
+            try {
+               const errData = await response.json();
+               if (errData.error) errorMsg = errData.error;
+            } catch(e) {}
+            throw new Error(errorMsg);
+          }
+
+          const data = await response.json();
+          dataMsg = data.message;
+      }
+      
+      if (dataMsg && dataMsg.role) {
+        setMessages(prev => [...prev, dataMsg]);
+        await saveMessage(dataMsg.role, dataMsg.content);
       } else {
         throw new Error('Invalid response format from server');
       }
@@ -286,6 +325,18 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
             className="overflow-hidden border-b border-white/5 bg-[#1a1a1f]"
           >
             <div className="p-4 space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">AI Provider</label>
+                <select 
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value)}
+                  className="w-full bg-black/20 border border-white/10 rounded-md px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
+                >
+                  <option value="gemini_server">Gemini (via Server)</option>
+                  <option value="gemini_client">Gemini (Direct from Client)</option>
+                  <option value="ollama_server">Ollama (via Server)</option>
+                </select>
+              </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-slate-400">Gemini API Key (Optional) {isConfigApiKey && <span className="text-emerald-400 ml-1">(from config)</span>}</label>
                 <input 

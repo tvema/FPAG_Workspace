@@ -4,10 +4,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import { GoogleGenAI } from "@google/genai";
-import { setGlobalDispatcher, ProxyAgent, getGlobalDispatcher } from "undici";
 
-let currentProxy = '';
-let originalDispatcher = getGlobalDispatcher();
 
 const db = new Database('project.db');
 
@@ -159,43 +156,77 @@ async function startServer() {
     }
   });
 
-  // Proxy to external Gemini
+  // Proxy to external AI
   app.post("/api/chat", async (req, res) => {
     try {
-      const { messages, apiKey: clientApiKey, model: clientModel, proxy: clientProxy } = req.body;
-      const apiKey = clientApiKey || process.env.GEMINI_API_KEY;
-      const proxy = clientProxy || process.env.GEMINI_HTTP_PROXY || "";
-      const model = clientModel || process.env.GEMINI_MODEL || "gemini-3.5-flash";
+      const { provider = 'gemini_server', messages, apiKey: clientApiKey, model: clientModel, proxy: clientProxy } = req.body;
       
-      if (proxy) {
-        if (proxy !== currentProxy) {
-          setGlobalDispatcher(new ProxyAgent(proxy));
-          currentProxy = proxy;
-        }
+      if (provider === 'ollama_server') {
+          const ollamaUrl = clientProxy || 'http://127.0.0.1:11434';
+          const model = clientModel || 'gemma';
+          
+          const ollamaMessages = messages.map((m: any) => ({
+             role: m.role === 'assistant' ? 'assistant' : 'user',
+             content: m.content
+          }));
+          
+          const response = await fetch(`${ollamaUrl}/api/chat`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({
+                model,
+                messages: ollamaMessages,
+                stream: false
+             })
+          });
+          
+          if (!response.ok) {
+             throw new Error(`Ollama API error: ${response.statusText}`);
+          }
+          const data = await response.json();
+          return res.json({ message: { role: 'assistant', content: data.message.content } });
       } else {
-        if (currentProxy !== '') {
-          setGlobalDispatcher(originalDispatcher);
-          currentProxy = '';
-        }
-      }
+          // Gemini Server-side Agent
+          const apiKey = clientApiKey || process.env.GEMINI_API_KEY;
+          const proxy = clientProxy || process.env.GEMINI_HTTP_PROXY || process.env.HTTP_PROXY || process.env.HTTPS_PROXY || "";
+          const model = clientModel || process.env.GEMINI_MODEL || "gemini-2.5-flash";
+          
+          if (!apiKey) {
+            return res.status(500).json({ error: "No API key provided. Please set it in settings." });
+          }
+          
+          const contents = messages.map((m: any) => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }]
+          }));
 
-      if (!apiKey) {
-        return res.status(500).json({ error: "No API key provided. Please set it in settings." });
+          const fetchOptions: any = {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ contents })
+          };
+
+          if (proxy) {
+             const { ProxyAgent } = require('undici');
+             fetchOptions.dispatcher = new ProxyAgent(proxy);
+          }
+
+          const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+          
+          const response = await fetch(apiUrl, fetchOptions);
+          
+          if (!response.ok) {
+              const errData = await response.json();
+              throw new Error(`Gemini Server Error: ${errData?.error?.message || response.statusText}`);
+          }
+          
+          const data = await response.json();
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+          return res.json({ message: { role: 'assistant', content: text } });
       }
-      const ai = new GoogleGenAI({ apiKey });
-      
-      const contents = messages.map((m: any) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      }));
-      
-      const response = await ai.models.generateContent({
-        model: model,
-        contents
-      });
-      
-      res.json({ message: { role: 'assistant', content: response.text } });
     } catch (err: any) {
+      console.error('Chat Error:', err);
       res.status(500).json({ error: err.message });
     }
   });
