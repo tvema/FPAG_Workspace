@@ -229,14 +229,23 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
               parts: [{ text: m.content }]
           }));
           
-          // Allow client proxy to solve CORS if necessary
-          const fetchUrl = effectiveProxy ? `${effectiveProxy.replace(/\/$/, '')}/v1beta/models/${geminiModel}:generateContent?key=${effectiveApiKey}` : apiUrl;
+          // If effectiveProxy is an HTTP/SOCKS proxy, typical browsers cannot use it via fetch URL.
+          // It's likely only valid if effectiveProxy is a CORS reverse-proxy base URL.
+          const fetchUrl = (effectiveProxy && !effectiveProxy.includes('127.0.0.1') && !effectiveProxy.includes('localhost')) 
+            ? `${effectiveProxy.replace(/\/$/, '')}/v1beta/models/${geminiModel}:generateContent?key=${effectiveApiKey}` 
+            : apiUrl;
 
-          const response = await fetch(fetchUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ contents: geminiContents })
-          });
+          let response;
+          try {
+             response = await fetch(fetchUrl, {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({ contents: geminiContents })
+             });
+          } catch (fetchErr: any) {
+             console.error("Native fetch error:", fetchErr);
+             throw new Error(`Direct connection failed: ${fetchErr.message}. If you are using a proxy or are in a restricted region, please switch 'AI Provider' to 'Gemini (via Server)'.`);
+          }
           
           if (!response.ok) {
              const errData = await response.json();
@@ -360,14 +369,14 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400">Server HTTP Proxy (Optional) {isConfigProxy && <span className="text-emerald-400 ml-1">(from config)</span>}</label>
+                <label className="text-xs font-medium text-slate-400">Proxy URL or Ollama Node URL {isConfigProxy && <span className="text-emerald-400 ml-1">(from config)</span>}</label>
                 <input 
                   type="text" 
                   value={isConfigProxy ? effectiveProxy : proxy}
                   onChange={(e) => setProxy(e.target.value)}
                   disabled={isConfigProxy}
                   className="w-full bg-black/20 border border-white/10 rounded-md px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 disabled:opacity-50"
-                  placeholder="e.g. http://127.0.0.1:8080 (defaults to server env)"
+                  placeholder="e.g. http://127.0.0.1:8080 or http://127.0.0.1:11434"
                 />
               </div>
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-md p-3">

@@ -207,8 +207,12 @@ async function startServer() {
           };
 
           if (proxy) {
+             let formattedProxy = proxy;
+             if (!formattedProxy.startsWith('http://') && !formattedProxy.startsWith('https://') && !formattedProxy.startsWith('socks')) {
+                 formattedProxy = 'http://' + formattedProxy;
+             }
              const { fetch: undiciFetch, ProxyAgent } = require('undici');
-             fetchOptions.dispatcher = new ProxyAgent(proxy);
+             fetchOptions.dispatcher = new ProxyAgent(formattedProxy);
              
              const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
           
