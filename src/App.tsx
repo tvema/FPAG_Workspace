@@ -11,6 +11,8 @@ import { GithubExportDialog } from './components/GithubExportDialog';
 import { DiffViewerModal } from './components/DiffViewerModal';
 import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
 import { parseVCD } from './utils/vcdParser';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode, fallback?: (err: Error) => React.ReactNode}, {error: Error | null}> {
   state = { error: null };
@@ -19,6 +21,18 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode, fallback
     if (this.state.error) return this.props.fallback ? this.props.fallback(this.state.error) : <div className="p-4 text-red-500 overflow-auto"><pre>{this.state.error.message}{'\n'}{this.state.error.stack}</pre></div>;
     return this.props.children;
   }
+}
+
+function MarkdownWrapper({ content }: { content: string }) {
+  return (
+    <div className="w-full h-full overflow-auto bg-[#1e1e1e] p-8">
+      <div className="max-w-4xl mx-auto prose prose-invert prose-emerald prose-headings:text-slate-200 prose-p:text-slate-300 prose-a:text-emerald-400 prose-code:text-emerald-300 prose-pre:bg-[#0d0d12] prose-pre:border prose-pre:border-white/10 prose-strong:text-slate-200">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {content}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
 }
 
 function VCDWrapper({ content, viewState, onViewStateChange }: { content: string, viewState?: WaveformViewerViewState, onViewStateChange?: (state: WaveformViewerViewState) => void }) {
@@ -896,13 +910,13 @@ export default function App() {
             AI Assistant
           </button>
           
-          {activeFile && ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && (
+          {activeFile && (['vcd', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || filesData[activeFile]?.name?.endsWith('.md')) && (
              <button 
                 onClick={() => updateFileUI(activeFile, s => ({ ...s, isTextMode: !s.isTextMode }))}
                 className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-emerald-400 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
              >
                 {fileUIStates[activeFile]?.isTextMode ? <Activity className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
-                {fileUIStates[activeFile]?.isTextMode ? 'Show Waveform' : 'Show Text'}
+                {fileUIStates[activeFile]?.isTextMode ? (['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'Show Waveform' : 'Show Render') : 'Show Text'}
              </button>
           )}
 
@@ -1001,7 +1015,7 @@ export default function App() {
           </div>
           <div className="flex-1 overflow-hidden relative">
             {activeFile ? (
-              ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase()) && !fileUIStates[activeFile]?.isTextMode ? (
+              ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && !fileUIStates[activeFile]?.isTextMode ? (
                 <div className="w-full h-full">
                   <VCDWrapper 
                       key={activeFile}
@@ -1010,23 +1024,25 @@ export default function App() {
                       onViewStateChange={(vcd) => updateFileUI(activeFile, p => ({ ...p, vcd }))}
                   />
                 </div>
+              ) : (['markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').endsWith('.md')) && !fileUIStates[activeFile]?.isTextMode ? (
+                <MarkdownWrapper content={filesData[activeFile]?.content || ''} />
               ) : (
               <Editor
                 height="100%"
                 theme={editorTheme}
                 language={
-                  ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'verilog' :
-                  ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'tcl' :
-                  ['makefile', 'mak', 'mk'].includes(filesData[activeFile]?.type?.toLowerCase()) || filesData[activeFile]?.name?.toLowerCase() === 'makefile' ? 'makefile' :
-                  ['c', 'h'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'c' :
-                  ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'cpp' :
-                  ['ts', 'tsx'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'typescript' :
-                  ['js', 'jsx'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'javascript' :
-                  ['json'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'json' :
-                  ['md', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'markdown' :
-                  ['css'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'css' :
-                  ['html'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'html' :
-                  ['sh', 'bash'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'shell' : 'plaintext'
+                  ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :
+                  ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'tcl' :
+                  ['makefile', 'mak', 'mk'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').toLowerCase() === 'makefile' ? 'makefile' :
+                  ['c', 'h'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'c' :
+                  ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'cpp' :
+                  ['ts', 'tsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'typescript' :
+                  ['js', 'jsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'javascript' :
+                  ['json'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'json' :
+                  ['md', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'markdown' :
+                  ['css'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'css' :
+                  ['html'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'html' :
+                  ['sh', 'bash'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'shell' : 'plaintext'
                 }
                 beforeMount={(monaco) => {
                   if (!monaco.languages.getLanguages().some((l: any) => l.id === 'makefile')) {

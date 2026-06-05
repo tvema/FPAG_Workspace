@@ -1,8 +1,13 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import { GoogleGenAI } from "@google/genai";
+import { setGlobalDispatcher, ProxyAgent, getGlobalDispatcher } from "undici";
+
+let currentProxy = '';
+let originalDispatcher = getGlobalDispatcher();
 
 const db = new Database('project.db');
 
@@ -157,8 +162,23 @@ async function startServer() {
   // Proxy to external Gemini
   app.post("/api/chat", async (req, res) => {
     try {
-      const { messages, apiKey: clientApiKey, model } = req.body;
+      const { messages, apiKey: clientApiKey, model: clientModel, proxy: clientProxy } = req.body;
       const apiKey = clientApiKey || process.env.GEMINI_API_KEY;
+      const proxy = clientProxy || process.env.GEMINI_HTTP_PROXY || "";
+      const model = clientModel || process.env.GEMINI_MODEL || "gemini-3.5-flash";
+      
+      if (proxy) {
+        if (proxy !== currentProxy) {
+          setGlobalDispatcher(new ProxyAgent(proxy));
+          currentProxy = proxy;
+        }
+      } else {
+        if (currentProxy !== '') {
+          setGlobalDispatcher(originalDispatcher);
+          currentProxy = '';
+        }
+      }
+
       if (!apiKey) {
         return res.status(500).json({ error: "No API key provided. Please set it in settings." });
       }
@@ -170,7 +190,7 @@ async function startServer() {
       }));
       
       const response = await ai.models.generateContent({
-        model: model || "gemini-3.5-flash",
+        model: model,
         contents
       });
       

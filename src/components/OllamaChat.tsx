@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, Bot, User, Settings, Loader2, AlertCircle, Save, GitMerge } from 'lucide-react';
 
@@ -75,11 +75,39 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   
   // Settings
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+  const [proxy, setProxy] = useState(() => localStorage.getItem('gemini_http_proxy') || '');
   const [model, setModel] = useState(() => {
-    const cached = localStorage.getItem('gemini_model');
-    return (!cached || cached === 'gemini-2.0-flash' || cached === 'gemini-1.5-flash' || cached === 'gemini-2.5-flash' || String(cached).includes('llama')) ? 'gemini-3.5-flash' : cached;
+    return localStorage.getItem('gemini_model') || '';
   });
   const [error, setError] = useState<string | null>(null);
+
+  const aiConfig = useMemo(() => {
+    if (!allFiles) return {};
+    const configFile = Object.values(allFiles).find((f: any) => 
+      f.path === 'ai_config.json' || 
+      f.name === 'ai_config.json' ||
+      f.path === '.aiconfig.json' ||
+      f.name === '.aiconfig.json' ||
+      f.path === 'aiconfig.json' ||
+      f.name === 'aiconfig.json'
+    );
+    if (configFile?.content) {
+      try {
+        return JSON.parse(configFile.content) || {};
+      } catch (e) {
+        return {};
+      }
+    }
+    return {};
+  }, [allFiles]);
+
+  const effectiveApiKey = aiConfig.api_key ?? aiConfig.apiKey ?? apiKey;
+  const effectiveModel = aiConfig.model ?? model;
+  const effectiveProxy = aiConfig.proxy ?? proxy;
+
+  const isConfigApiKey = (aiConfig.api_key ?? aiConfig.apiKey) !== undefined;
+  const isConfigModel = aiConfig.model !== undefined;
+  const isConfigProxy = aiConfig.proxy !== undefined;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -90,6 +118,10 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   useEffect(() => {
     localStorage.setItem('gemini_api_key', apiKey);
   }, [apiKey]);
+
+  useEffect(() => {
+    localStorage.setItem('gemini_http_proxy', proxy);
+  }, [proxy]);
 
   useEffect(() => {
     localStorage.setItem('gemini_model', model);
@@ -184,8 +216,9 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: model.trim() || 'gemini-3.5-flash',
-          apiKey: apiKey.trim() || undefined,
+          model: effectiveModel.trim() || undefined,
+          apiKey: effectiveApiKey.trim() || undefined,
+          proxy: effectiveProxy.trim() || undefined,
           messages: apiMessages,
           stream: false,
         }),
@@ -254,23 +287,36 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
           >
             <div className="p-4 space-y-3">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400">Gemini API Key (Optional)</label>
+                <label className="text-xs font-medium text-slate-400">Gemini API Key (Optional) {isConfigApiKey && <span className="text-emerald-400 ml-1">(from config)</span>}</label>
                 <input 
                   type="password" 
-                  value={apiKey}
+                  value={isConfigApiKey ? effectiveApiKey : apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full bg-black/20 border border-white/10 rounded-md px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50"
+                  disabled={isConfigApiKey}
+                  className="w-full bg-black/20 border border-white/10 rounded-md px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 disabled:opacity-50"
                   placeholder="Paste your key to bypass server limits"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400">Model Name</label>
+                <label className="text-xs font-medium text-slate-400">Model Name (Optional) {isConfigModel && <span className="text-emerald-400 ml-1">(from config)</span>}</label>
                 <input 
                   type="text" 
-                  value={model}
+                  value={isConfigModel ? effectiveModel : model}
                   onChange={(e) => setModel(e.target.value)}
-                  className="w-full bg-black/20 border border-white/10 rounded-md px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50"
-                  placeholder="e.g. gemini-3.5-flash"
+                  disabled={isConfigModel}
+                  className="w-full bg-black/20 border border-white/10 rounded-md px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 disabled:opacity-50"
+                  placeholder="e.g. gemini-3.5-flash (defaults to server env)"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">Server HTTP Proxy (Optional) {isConfigProxy && <span className="text-emerald-400 ml-1">(from config)</span>}</label>
+                <input 
+                  type="text" 
+                  value={isConfigProxy ? effectiveProxy : proxy}
+                  onChange={(e) => setProxy(e.target.value)}
+                  disabled={isConfigProxy}
+                  className="w-full bg-black/20 border border-white/10 rounded-md px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 disabled:opacity-50"
+                  placeholder="e.g. http://127.0.0.1:8080 (defaults to server env)"
                 />
               </div>
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-md p-3">
