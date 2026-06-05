@@ -9,7 +9,7 @@ interface Message {
 
 const CodeBlock = ({ lang, code, onAddFile, onProposeMerge }: { lang: string, code: string, onAddFile: (p: string, c: string) => void, onProposeMerge: (code: string) => void }) => {
     const [isSaving, setIsSaving] = useState(false);
-    const [path, setPath] = useState(`verilog/src/new_module.v`);
+    const [path, setPath] = useState(`src/new_module.v`);
 
     return (
         <div className="my-3 border border-white/10 rounded-lg overflow-hidden bg-[#0c0c0e]">
@@ -31,7 +31,7 @@ const CodeBlock = ({ lang, code, onAddFile, onProposeMerge }: { lang: string, co
                             value={path} 
                             onChange={e => setPath(e.target.value)}
                             className="bg-black/50 border border-white/20 rounded px-2 py-1 text-white w-48 text-[11px] focus:outline-none focus:border-indigo-500"
-                            placeholder="verilog/src/module.v"
+                            placeholder="src/module.v"
                             autoFocus
                         />
                         <button onClick={() => { onAddFile(path, code); setIsSaving(false); }} className="text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1 rounded hover:bg-emerald-500/10 transition-colors">

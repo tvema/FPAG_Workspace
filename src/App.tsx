@@ -1,216 +1,52 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, ChevronRight, Folder, FolderOpen, MessageSquare, GitMerge, Pencil, Trash2, FilePlus, FolderPlus, Type, X, MoreVertical, Link, Github } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, ChevronRight, ChevronDown, Folder, FolderOpen, MessageSquare, GitMerge, Pencil, Trash2, FilePlus, FolderPlus, Type, X, MoreVertical, Link, Github, Activity, FileText, Upload } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import debounce from 'lodash.debounce';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { OllamaChat } from './components/OllamaChat';
 import JSZip from 'jszip';
-import ReactDiffViewer from 'react-diff-viewer-continued';
 import Editor from '@monaco-editor/react';
+import { PromptDialog } from './components/PromptDialog';
+import { GithubExportDialog } from './components/GithubExportDialog';
+import { DiffViewerModal } from './components/DiffViewerModal';
+import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
+import { parseVCD } from './utils/vcdParser';
 
-const initialFiles = {
-  sync_pulse_hub: {
-    name: 'sync_pulse_hub.v',
-    path: 'verilog/src/sync_pulse_hub.v',
-    type: 'verilog',
-    content: `` + "`" + `timescale 1ns/1ps
+class ErrorBoundary extends React.Component<{children: React.ReactNode, fallback?: (err: Error) => React.ReactNode}, {error: Error | null}> {
+  state = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) return this.props.fallback ? this.props.fallback(this.state.error) : <div className="p-4 text-red-500 overflow-auto"><pre>{this.state.error.message}{'\n'}{this.state.error.stack}</pre></div>;
+    return this.props.children;
+  }
+}
 
-module sync_pulse_hub (
-    input  wire sys_clk,
-    input  wire adc_clk,
-    input  wire log_clk,
-    input  wire dac_clk,
-    input  wire hi_clk,
-    input  wire i_rst_n,
-    input  wire i_sync,
-    output wire o_sys_rst_n,
-    output wire o_adc_rst_n,
-    output wire o_log_rst_n,
-    output wire o_dac_rst_n,
-    output wire o_hi_rst_n,
-    output reg  o_sys_sync,
-    output wire o_adc_sync,
-    output wire o_log_sync,
-    output wire o_dac_sync,
-    output wire o_hi_sync
-);
-    // Code loaded from project...
-endmodule`
-  },
-  sync_pulse_hub_tb: {
-    name: 'sync_pulse_hub_tb.v',
-    path: 'verilog/tb/sync_pulse_hub_tb.v',
-    type: 'verilog',
-    content: `` + "`" + `timescale 1ns/1ps
+function VCDWrapper({ content, viewState, onViewStateChange }: { content: string, viewState?: WaveformViewerViewState, onViewStateChange?: (state: WaveformViewerViewState) => void }) {
+  const vcdData = useMemo(() => {
+    try {
+      return parseVCD(content);
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
+  }, [content]);
 
-module sync_pulse_hub_tb;
-    reg sys_clk;
-    reg adc_clk;
-    reg log_clk;
-    reg dac_clk;
-    reg hi_clk;
-    reg i_rst_n;
-    reg i_sync;
+  if (!vcdData) {
+    return <div className="p-4 text-rose-400">Error parsing VCD file. The file may be corrupted or unsupported.</div>;
+  }
+  return (
+    <ErrorBoundary>
+      <WaveformViewer vcd={vcdData} viewState={viewState} onViewStateChange={onViewStateChange} />
+    </ErrorBoundary>
+  );
+}
 
-    // Code loaded from project...
-endmodule`
-  },
-  counter: {
-    name: 'counter.v',
-    path: 'verilog/src/counter.v',
-    type: 'verilog',
-    content: `module counter #(parameter WIDTH = 8) (
-    input wire clk,
-    input wire rst,
-    output reg [WIDTH-1:0] count
-);
-
-    always @(posedge clk or posedge rst) begin
-        if (rst)
-            count <= 0;
-        else
-            count <= count + 1;
-    end
-
-endmodule`
-  },
-  testbench: {
-    name: 'counter_tb.v',
-    path: 'verilog/tb/counter_tb.v',
-    type: 'verilog',
-    content: `` + "`" + `timescale 1ns/1ps
-
-module counter_tb;
-    reg clk;
-    reg rst;
-    wire [7:0] count;
-
-    counter #(.WIDTH(8)) uut (
-        .clk(clk),
-        .rst(rst),
-        .count(count)
-    );
-
-    always #5 clk = ~clk;
-
-    initial begin
-        $dumpfile("counter_tb.vcd");
-        $dumpvars(0, counter_tb);
-        
-        clk = 0; rst = 1;
-        #20; rst = 0;
-        #200;
-        
-        $display("Simulation complete.");
-        $finish;
-    end
-endmodule`
-  },
-  makefile: {
-    name: 'Makefile',
-    path: 'verilog/Makefile',
-    type: 'makefile',
-    content: `CC = iverilog
-SIM = vvp
-WAVE = gtkwave
-
-SRC_DIR = src
-TB_DIR = tb
-OUT_DIR = build
-
-MODULE ?= counter
-SRC = $(wildcard $(SRC_DIR)/*.v)
-TB = $(TB_DIR)/$(MODULE)_tb.v
-
-all: sim
-
-$(OUT_DIR):
-\tmkdir -p $(OUT_DIR)
-
-compile: $(OUT_DIR)
-\t$(CC) -o $(OUT_DIR)/$(MODULE).vvp $(SRC) $(TB)
-
-sim: compile
-\t$(SIM) $(OUT_DIR)/$(MODULE).vvp
-
-wave: sim
-\t$(WAVE) $(MODULE)_tb.vcd &`
-  },
-  tests: {
-    name: 'run_tests.sh',
-    path: 'verilog/scripts/run_tests.sh',
-    type: 'bash',
-    content: `#!/bin/bash
-# Automated test script for all Verilog modules
-
-mkdir -p build
-echo "Starting Automated Tests..."
-
-for tb in tb/*_tb.v; do
-    filename=$(basename "$tb")
-    module="\${filename%_tb.v}"
-
-    iverilog -o build/\${module}.vvp src/\${module}.v tb/\${filename}
-    if [ $? -ne 0 ]; then
-        echo "[FAIL] Compilation failed for $module"
-        continue
-    fi
-
-    vvp build/\${module}.vvp > build/\${module}_sim.log
-    if [ $? -eq 0 ]; then
-        echo "[PASS] Generated \${module}_tb.vcd"
-    fi
-done`
-  },
-  quartus: {
-    name: 'setup_project.tcl',
-    path: 'verilog/quartus/setup_project.tcl',
-    type: 'tcl',
-    content: `# Quartus II setup script
-# Target FPGA: EP4CE55F23I7N
-# Run via: quartus_sh -t setup_project.tcl
-
-project_new fpga_project -overwrite
-
-set_global_assignment -name FAMILY "Cyclone IV E"
-set_global_assignment -name DEVICE EP4CE55F23I7N
-set_global_assignment -name VERILOG_FILE ../src/counter.v
-set_global_assignment -name VERILOG_FILE ../src/sync_pulse_hub.v
-set_global_assignment -name SDC_FILE fpga_project.sdc
-set_global_assignment -name TOP_LEVEL_ENTITY counter
-
-export_assignments
-project_close
-puts "Quartus project generated."`
-  },
-  sdc_file: {
-    name: 'fpga_project.sdc',
-    path: 'verilog/quartus/fpga_project.sdc',
-    type: 'sdc',
-    content: `# Timing Constraints for EP4CE55F23I7N
-# Top-level: sync_pulse_hub
-
-# 1. Define Clocks
-create_clock -name sys_clk -period 10.000 -waveform { 0.000 5.000 } [get_ports {sys_clk}]
-create_clock -name adc_clk -period 8.000  -waveform { 0.000 4.000 } [get_ports {adc_clk}]
-create_clock -name log_clk -period 12.000 -waveform { 0.000 6.000 } [get_ports {log_clk}]
-create_clock -name dac_clk -period 4.000  -waveform { 0.000 2.000 } [get_ports {dac_clk}]
-create_clock -name hi_clk  -period 3.000  -waveform { 0.000 1.500 } [get_ports {hi_clk}]
-
-derive_pll_clocks
-derive_clock_uncertainty
-
-# 2. Clock Groups (Asynchronous setup)
-set_clock_groups -asynchronous \\
-    -group [get_clocks {sys_clk}] \\
-    -group [get_clocks {adc_clk}] \\
-    -group [get_clocks {log_clk}] \\
-    -group [get_clocks {dac_clk}] \\
-    -group [get_clocks {hi_clk}]
-
-# 3. False Paths & Exceptions
-set_false_path -from [get_ports {i_rst_n}] -to *
-set_false_path -from [get_ports {i_sync}] -to [get_registers {sync_reg_d1}]`
+const initialFiles: Record<string, any> = {
+  readme: {
+    name: 'README.md',
+    path: 'README.md',
+    type: 'markdown',
+    content: `# Welcome to AI Studio Project\n\nThis is a clean workspace.`
   }
 };
 
@@ -218,6 +54,13 @@ export default function App() {
   const [filesData, setFilesData] = useState<Record<string, {name: string, path: string, type: string, content: string}>>({});
   const [activeFile, setActiveFile] = useState<string>('');
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
+  const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
+  const [fileUIStates, setFileUIStates] = useState<Record<string, { isTextMode?: boolean, vcd?: WaveformViewerViewState }>>({});
+  
+  const updateFileUI = (fileId: string, updater: (prev: any) => any) => {
+     setFileUIStates(prev => ({ ...prev, [fileId]: updater(prev[fileId] || {}) }));
+  };
+  
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [chatInput, setChatInput] = useState('');
   const [proposedMergeCode, setProposedMergeCode] = useState<string | null>(null);
@@ -228,6 +71,7 @@ export default function App() {
   const [editorTheme, setEditorTheme] = useState<string>('vs-dark');
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingGist, setIsExportingGist] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<string | null>(null);
   const [githubToken, setGithubToken] = useState<string | null>(() => localStorage.getItem('github_token'));
 
   const [promptDialog, setPromptDialog] = useState<{
@@ -239,6 +83,32 @@ export default function App() {
     isOpen: false,
     title: '',
     defaultValue: '',
+    onResolve: null
+  });
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onResolve: ((val: boolean) => void) | null;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onResolve: null
+  });
+
+  const [multiChoiceDialog, setMultiChoiceDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    choices: { label: string; value: string; variant?: 'primary' | 'danger' | 'secondary' }[];
+    onResolve: ((val: string | null) => void) | null;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    choices: [],
     onResolve: null
   });
 
@@ -255,6 +125,33 @@ export default function App() {
         isOpen: true,
         title,
         defaultValue,
+        onResolve: resolve
+      });
+    });
+  };
+
+  const customConfirm = (title: string, message: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmDialog({
+        isOpen: true,
+        title,
+        message,
+        onResolve: resolve
+      });
+    });
+  };
+
+  const customMultiChoice = (
+    title: string, 
+    message: string, 
+    choices: { label: string; value: string; variant?: 'primary' | 'danger' | 'secondary' }[]
+  ): Promise<string | null> => {
+    return new Promise((resolve) => {
+      setMultiChoiceDialog({
+        isOpen: true,
+        title,
+        message,
+        choices,
         onResolve: resolve
       });
     });
@@ -309,6 +206,83 @@ export default function App() {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
+
+  const handleImportZip = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip,application/zip';
+    input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+
+        const importChoice = await customMultiChoice(
+           'Import ZIP Options', 
+           'Choose how you want to import the ZIP file contents.', 
+           [
+              { label: 'Create New Project', value: 'new', variant: 'primary' },
+              { label: 'Overwrite Current', value: 'overwrite', variant: 'danger' },
+              { label: 'Cancel', value: 'cancel', variant: 'secondary' }
+           ]
+        );
+        
+        if (!importChoice || importChoice === 'cancel') return;
+        
+        let targetProjId = activeProject;
+        
+        if (importChoice === 'new') {
+            const defaultName = file.name ? file.name.replace(/\.zip$/i, '') : "Imported Project";
+            const name = await customPrompt("Enter new project name:", defaultName);
+            if (!name) return;
+            
+            const newProjId = `proj_${Date.now()}`;
+            await fetch('/api/projects', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: newProjId, name })
+            }).catch(console.error);
+            setProjects(prev => [{id: newProjId, name}, ...prev]);
+            targetProjId = newProjId;
+        } else if (importChoice === 'overwrite') {
+            if (!activeProject) return;
+            const confirmOverwrite = await customConfirm('Are you sure?', 'All files in the current project will be permanently deleted.');
+            if (!confirmOverwrite) return;
+            
+            // Delete all current files on server
+            Object.keys(filesData).forEach(id => {
+                fetch(`/api/files/${id}`, { method: 'DELETE' }).catch(console.error);
+            });
+            // Clear UI state
+            setFilesData({});
+            setOpenedTabs([]);
+            setActiveFile('');
+        }
+        
+        try {
+            const zip = await JSZip.loadAsync(file);
+            
+            for (const [path, zipEntry] of Object.entries(zip.files)) {
+                if (!zipEntry.dir) {
+                    if (path.includes('__MACOSX') || path.includes('.DS_Store')) continue;
+                    
+                    const content = await zipEntry.async('string');
+                    const cleanPath = path.replace(/\\/g, '/'); // normalize backslashes
+                    if (targetProjId) {
+                       await handleAddFile(cleanPath, content, targetProjId);
+                    }
+                }
+            }
+            
+            if (targetProjId && targetProjId !== activeProject) {
+                setActiveProject(targetProjId); // This will trigger useEffect to reload files!
+            }
+            
+        } catch (err) {
+            console.error("Failed to parse ZIP", err);
+            alert("Failed to read ZIP file.");
+        }
+    };
+    input.click();
+  };
 
   const handleExportZip = async () => {
     setIsExporting(true);
@@ -484,15 +458,28 @@ export default function App() {
     }
   };
 
-  const saveFileToAPI = useCallback(
-    debounce((id: string, fileObj: any, projId: string) => {
-      fetch('/api/files', {
+  const debounceMap = useMemo(() => new Map<string, (...args: any[]) => void>(), []);
+  
+  const saveFileDirect = useCallback((id: string, fileObj: any, projId: string) => {
+      return fetch('/api/files', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, project_id: projId, ...fileObj })
       }).catch(err => console.error("Failed to save file remotely", err));
-    }, 1000),
-    []
+  }, []);
+
+  const saveFileToAPI = useCallback(
+    (id: string, fileObj: any, projId: string) => {
+      let debounced = debounceMap.get(id);
+      if (!debounced) {
+         debounced = debounce((idArg: string, fileObjArg: any, projIdArg: string) => {
+            saveFileDirect(idArg, fileObjArg, projIdArg);
+         }, 1000);
+         debounceMap.set(id, debounced);
+      }
+      debounced(id, fileObj, projId);
+    },
+    [debounceMap, saveFileDirect]
   );
 
   // Load Projects on mount
@@ -575,17 +562,152 @@ export default function App() {
 
   const fileList = Object.entries(filesData).map(([id, f]) => ({id, ...f}));
   
-  const tree: Record<string, { id: string, name: string, path: string }[]> = {};
+  type TreeNode = {
+    name: string;
+    path: string;
+    type: 'file' | 'folder';
+    fileId?: string;
+    children: Record<string, TreeNode>;
+  };
+  
+  const treeRoot: Record<string, TreeNode> = {};
   fileList.forEach(f => {
       const parts = f.path.split('/');
-      const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
-      if (!tree[dir]) tree[dir] = [];
-      tree[dir].push({ id: f.id, name: f.name, path: f.path });
+      let currentLevel = treeRoot;
+      for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          const isFile = i === parts.length - 1;
+          const currentPath = parts.slice(0, i + 1).join('/');
+          
+          if (isFile) {
+             currentLevel[part] = { name: part, path: currentPath, type: 'file', fileId: f.id, children: {} };
+          } else {
+             if (!currentLevel[part]) {
+                currentLevel[part] = { name: part, path: currentPath, type: 'folder', children: {} };
+             }
+             currentLevel = currentLevel[part].children;
+          }
+      }
   });
 
-  const sortedDirs = Object.keys(tree).sort();
+  const renderTree = (nodes: Record<string, TreeNode>, depth: number = 0) => {
+    return Object.values(nodes)
+      .sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      })
+      .map(node => {
+        if (node.type === 'folder') {
+          const isCollapsed = collapsedDirs[node.path];
+          return (
+            <div key={node.path}>
+              <div 
+                className={`flex items-center justify-between text-sm text-slate-200 py-1.5 font-medium group pr-2 cursor-pointer hover:bg-white/5 rounded`}
+                style={{ paddingLeft: `${depth * 16}px` }}
+                onClick={() => setCollapsedDirs(prev => ({ ...prev, [node.path]: !prev[node.path] }))}
+              >
+                <div className="flex items-center gap-1.5">
+                  {isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                  <FolderOpen className="w-4 h-4 text-amber-400" />
+                  <span>{node.name}</span>
+                </div>
+                <DropdownMenu.Root>
+                   <DropdownMenu.Trigger asChild>
+                      <button onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded p-1">
+                         <MoreVertical className="w-3.5 h-3.5 text-slate-400" />
+                      </button>
+                   </DropdownMenu.Trigger>
+                   <DropdownMenu.Portal>
+                      <DropdownMenu.Content align="end" sideOffset={2} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[140px] z-50">
+                         <DropdownMenu.Item 
+                           onClick={(e) => { 
+                              e.stopPropagation(); 
+                              customPrompt(`Enter new file name (in ${node.path}/):`, 'new_file.v').then(name => {
+                                if (name) handleAddFile(`${node.path}/${name}`, "// New file\n");
+                              });
+                           }} 
+                           className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
+                         >
+                             <FilePlus className="w-3 h-3" /> New File Here
+                         </DropdownMenu.Item>
+                         <DropdownMenu.Item 
+                           onClick={(e) => { 
+                              e.stopPropagation(); 
+                              customPrompt(`Enter new folder name (in ${node.path}/):`, 'new_folder').then(name => {
+                                if (name) {
+                                  const folderName = name.endsWith('/') ? name : name + '/';
+                                  handleAddFile(`${node.path}/${folderName}.gitkeep`, "");
+                                }
+                              });
+                           }} 
+                           className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
+                         >
+                             <FolderPlus className="w-3 h-3" /> New Folder Here
+                         </DropdownMenu.Item>
+                         <DropdownMenu.Item 
+                           onClick={(e) => { 
+                              e.stopPropagation(); 
+                              handleFileUploadMenu(node.path);
+                           }} 
+                           className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
+                         >
+                             <Upload className="w-3 h-3" /> Upload File(s)
+                         </DropdownMenu.Item>
+                      </DropdownMenu.Content>
+                   </DropdownMenu.Portal>
+                </DropdownMenu.Root>
+              </div>
+              {!isCollapsed && (
+                <div className="flex flex-col">
+                  {renderTree(node.children, depth + 1)}
+                </div>
+              )}
+            </div>
+          );
+        }
 
-  const handleAddFile = (path: string, content: string, projId?: string) => {
+        return (
+          <div 
+            key={node.path}
+            onClick={() => { if (node.fileId) { setActiveFile(node.fileId); setOpenedTabs(p => p.includes(node.fileId!) ? p : [...p, node.fileId!]); } }}
+            className={`group py-1 pr-1 flex items-center justify-between cursor-pointer transition-colors ${activeFile === node.fileId ? 'text-emerald-400 bg-emerald-500/10 rounded' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 rounded'}`}
+            style={{ paddingLeft: `${depth * 16 + 20}px` }}
+          >
+             <div className="flex items-center gap-2 text-[13px] overflow-hidden min-w-0">
+               <FileCode2 className="w-3.5 h-3.5 shrink-0" />
+               <span className="truncate">{node.name}</span>
+             </div>
+             
+             <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                   <button onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded p-1">
+                      <MoreVertical className="w-3.5 h-3.5" />
+                   </button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                   <DropdownMenu.Content align="end" sideOffset={2} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[120px] z-50">
+                      <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); setChatInput((prev) => prev + (prev.endsWith(' ') || prev === '' ? '' : ' ') + `{${node.path}}`); setIsChatOpen(true); }} className="px-3 py-1.5 text-xs text-indigo-300 hover:bg-indigo-500/10 hover:text-indigo-200 cursor-pointer outline-none flex items-center gap-2">
+                          <Link className="w-3 h-3" /> Reference
+                      </DropdownMenu.Item>
+                      {node.fileId && (
+                      <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleRenameFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2">
+                          <Type className="w-3 h-3" /> Rename
+                      </DropdownMenu.Item>
+                      )}
+                      {node.fileId && (
+                      <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleDeleteFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 cursor-pointer outline-none flex items-center gap-2">
+                          <Trash2 className="w-3 h-3" /> Delete
+                      </DropdownMenu.Item>
+                      )}
+                   </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+             </DropdownMenu.Root>
+          </div>
+        );
+      });
+  };
+
+  const handleAddFile = async (path: string, content: string, projId?: string) => {
       const targetProj = projId || activeProject;
       const id = `${targetProj}_${path.replace(/[^a-zA-Z0-9]/g, '_')}`;
       const name = path.split('/').pop() || id;
@@ -599,12 +721,49 @@ export default function App() {
       setActiveFile(id);
       setOpenedTabs(prev => prev.includes(id) ? prev : [...prev, id]);
 
-      if (targetProj) saveFileToAPI(id, fileObj, targetProj);
+      if (targetProj) await saveFileDirect(id, fileObj, targetProj);
   };
 
-  const handleDeleteFile = (id: string) => {
-      if (!confirm("Are you sure you want to delete this file?")) return;
-      
+  const handleFileUploadMenu = (targetPath: string) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.onchange = async (e) => {
+          const files = (e.target as HTMLInputElement).files;
+          if (!files) return;
+          
+          for (const file of Array.from(files)) {
+              let finalName = file.name;
+              let fullPath = targetPath ? `${targetPath}/${finalName}` : finalName;
+              
+              const isCollision = () => Object.values(filesData).some(f => f.path === fullPath);
+              
+              if (isCollision()) {
+                 const newName = await customPrompt(`File "${fullPath}" already exists. Enter a new name, or leave same to overwrite:`, finalName);
+                 if (newName === null) continue; // User cancelled
+                 
+                 finalName = newName;
+                 fullPath = targetPath ? `${targetPath}/${finalName}` : finalName;
+                 
+                 if (isCollision()) {
+                     const confirmed = await customConfirm('Overwrite File?', `Are you sure you want to overwrite "${fullPath}"?`);
+                     if (!confirmed) continue;
+                 }
+              }
+              
+              const content = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onload = (event) => resolve((event.target?.result as string) || '');
+                  reader.readAsText(file);
+              });
+              
+              handleAddFile(fullPath, content);
+          }
+      };
+      input.click();
+  };
+
+  const confirmDeleteFile = (id: string) => {
       setFilesData(prev => {
           const newFiles = { ...prev };
           delete newFiles[id];
@@ -620,6 +779,10 @@ export default function App() {
       });
       
       fetch(`/api/files/${id}`, { method: 'DELETE' }).catch(console.error);
+  };
+
+  const handleDeleteFile = (id: string) => {
+      setFileToDelete(id);
   };
 
   const handleRenameFile = async (id: string) => {
@@ -663,9 +826,13 @@ export default function App() {
        
        // Create initial structure
        setTimeout(() => {
-          handleAddFile('Makefile', 'all:\n\t@echo "Project initialized"', id);
-          handleAddFile('ai_context.md', '# Global AI Project Configuration\n\nThis is a global prompt for all files generated by the AI.\nWrite your general instructions here.', id);
-          handleAddFile('src/.gitkeep', '', id);
+          handleAddFile('Makefile', 'all:\n\tiverilog -o sim/tb.vvp src/top.v src/top_tb.v\n\tvvp sim/tb.vvp\n\clean:\n\trm -f sim/tb.vvp sim/test.vcd', id);
+          handleAddFile('ai_context.md', '# Global AI Project Configuration\n\nThis is a global prompt for all files generated by the AI.\nWrite your general instructions for Verilog/FPGA logic here.', id);
+          handleAddFile('src/top.v', 'module top (\n    input wire clk,\n    input wire rst,\n    output reg [7:0] data_out\n);\n\n    always @(posedge clk or posedge rst) begin\n        if (rst) begin\n            data_out <= 8\'d0;\n        end else begin\n            data_out <= data_out + 1\'b1;\n        end\n    end\n\nendmodule\n', id);
+          handleAddFile('src/top_tb.v', '`timescale 1ns/1ps\n\nmodule top_tb;\n    reg clk;\n    reg rst;\n    wire [7:0] data_out;\n\n    top uut (\n        .clk(clk),\n        .rst(rst),\n        .data_out(data_out)\n    );\n\n    initial begin\n        $dumpfile("sim/test.vcd");\n        $dumpvars(0, top_tb);\n        \n        clk = 0;\n        rst = 1;\n        #10 rst = 0;\n        #100 $finish;\n    end\n\n    always #5 clk = ~clk;\nendmodule\n', id);
+          handleAddFile('quartus/project.qpf', 'PROJECT_REVISION = "project"\n', id);
+          handleAddFile('quartus/project.qsf', 'set_global_assignment -name FAMILY "Cyclone IV E"\nset_global_assignment -name DEVICE EP4CE22F17C6\nset_global_assignment -name TOP_LEVEL_ENTITY top\nset_global_assignment -name VERILOG_FILE ../src/top.v\n', id);
+          handleAddFile('sim/test.vcd', '$date\n   Today\n$end\n$version\n  Icarus Verilog\n$end\n$timescale\n  1ns\n$end\n$scope module top_tb $end\n$var wire 1 ! clk $end\n$var wire 1 " rst $end\n$var wire 8 # data_out [7:0] $end\n$upscope $end\n$enddefinitions $end\n#0\n$dumpvars\n0!\n1"\nb00000000 #\n$end\n#5\n1!\n#10\n0!\n0"\n#15\n1!\nb00000001 #\n#20\n0!\n', id);
        }, 500);
     })
     .catch(console.error);
@@ -681,14 +848,12 @@ export default function App() {
               <Cpu className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h1 className="text-sm font-semibold text-white">FPGA Workspace</h1>
+              <h1 className="text-sm font-semibold text-white">Smart Workspace</h1>
               <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
                 <span className="flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  EP4CE55F23I7N
+                  Connected
                 </span>
-                <span>•</span>
-                <span>Icarus + GTKWave + Quartus</span>
               </div>
             </div>
           </div>
@@ -730,10 +895,29 @@ export default function App() {
             <MessageSquare className="w-3.5 h-3.5" />
             AI Assistant
           </button>
+          
+          {activeFile && ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && (
+             <button 
+                onClick={() => updateFileUI(activeFile, s => ({ ...s, isTextMode: !s.isTextMode }))}
+                className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-emerald-400 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
+             >
+                {fileUIStates[activeFile]?.isTextMode ? <Activity className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
+                {fileUIStates[activeFile]?.isTextMode ? 'Show Waveform' : 'Show Text'}
+             </button>
+          )}
+
+          <button 
+            onClick={handleImportZip}
+            className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-slate-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Import ZIP
+          </button>
+          
           <button 
             onClick={handleExportZip}
             disabled={isExporting}
-            className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-slate-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
+            className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-slate-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Download className="w-3.5 h-3.5" />
             {isExporting ? 'Exporting...' : 'Export to ZIP'}
@@ -742,7 +926,7 @@ export default function App() {
             <button 
               onClick={handleExportGist}
               disabled={isExportingGist}
-              className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
+              className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Github className="w-3.5 h-3.5" />
               {isExportingGist ? 'Exporting...' : 'Export to GitHub'}
@@ -817,15 +1001,52 @@ export default function App() {
           </div>
           <div className="flex-1 overflow-hidden relative">
             {activeFile ? (
+              ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase()) && !fileUIStates[activeFile]?.isTextMode ? (
+                <div className="w-full h-full">
+                  <VCDWrapper 
+                      key={activeFile}
+                      content={filesData[activeFile]?.content || ''} 
+                      viewState={fileUIStates[activeFile]?.vcd}
+                      onViewStateChange={(vcd) => updateFileUI(activeFile, p => ({ ...p, vcd }))}
+                  />
+                </div>
+              ) : (
               <Editor
                 height="100%"
                 theme={editorTheme}
                 language={
-                  ['v', 'verilog'].includes(filesData[activeFile]?.type) ? 'verilog' :
-                  ['tcl', 'sdc'].includes(filesData[activeFile]?.type) ? 'tcl' :
-                  ['sh', 'bash'].includes(filesData[activeFile]?.type) ? 'shell' :
-                  ['makefile', 'Makefile'].includes(filesData[activeFile]?.type) ? 'makefile' : 'plaintext'
+                  ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'verilog' :
+                  ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'tcl' :
+                  ['makefile', 'mak', 'mk'].includes(filesData[activeFile]?.type?.toLowerCase()) || filesData[activeFile]?.name?.toLowerCase() === 'makefile' ? 'makefile' :
+                  ['c', 'h'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'c' :
+                  ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'cpp' :
+                  ['ts', 'tsx'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'typescript' :
+                  ['js', 'jsx'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'javascript' :
+                  ['json'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'json' :
+                  ['md', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'markdown' :
+                  ['css'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'css' :
+                  ['html'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'html' :
+                  ['sh', 'bash'].includes(filesData[activeFile]?.type?.toLowerCase()) ? 'shell' : 'plaintext'
                 }
+                beforeMount={(monaco) => {
+                  if (!monaco.languages.getLanguages().some((l: any) => l.id === 'makefile')) {
+                    monaco.languages.register({ id: 'makefile' });
+                    monaco.languages.setMonarchTokensProvider('makefile', {
+                      tokenizer: {
+                        root: [
+                          [/^[a-zA-Z0-9_.-]+:/, 'keyword'],
+                          [/^\s*#.*$/, 'comment'],
+                          [/\$\([a-zA-Z0-9_.-]+\)/, 'variable'],
+                          [/\$\{[a-zA-Z0-9_.-]+\}/, 'variable'],
+                          [/=/, 'operator'],
+                          [/\b(if|ifeq|else|endif)\b/, 'keyword'],
+                          [/".*?"/, 'string'],
+                          [/'.*?'/, 'string'],
+                        ]
+                      }
+                    });
+                  }
+                }}
                 value={filesData[activeFile]?.content || ''}
                 onChange={(val) => {
                   if (val !== undefined && activeFile) {
@@ -839,6 +1060,7 @@ export default function App() {
                 }}
                 options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false, wordWrap: 'on' }}
               />
+              )
             ) : (
               <div className="flex items-center justify-center h-full text-slate-600 text-sm">Select a file to edit</div>
             )}
@@ -852,284 +1074,136 @@ export default function App() {
                <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Project</h2>
                <div className="flex items-center gap-2">
                  <button onClick={async () => {
-                     const newPath = await customPrompt("Enter complete new folder path (e.g. verilog/src/new_folder):");
-                     if (newPath) {
-                         const folderPath = newPath.endsWith('/') ? newPath : newPath + '/';
+                     const name = await customPrompt("Enter new folder name in root:");
+                     if (name) {
+                         const folderPath = name.endsWith('/') ? name : name + '/';
                          handleAddFile(folderPath + '.gitkeep', "");
                      }
                  }} className="text-slate-400 hover:text-white" title="New Folder"><FolderPlus className="w-4 h-4" /></button>
                  <button onClick={async () => {
-                     const newPath = await customPrompt("Enter complete new file path (e.g. verilog/src/new_file.v):");
-                     if (newPath) {
-                         handleAddFile(newPath, "// New file\n");
+                     const name = await customPrompt("Enter new file name in root:", "new_file.v");
+                     if (name) {
+                         handleAddFile(name, "// New file\n");
                      }
                  }} className="text-slate-400 hover:text-white" title="New File"><FilePlus className="w-4 h-4" /></button>
+                 <button onClick={() => {
+                     handleFileUploadMenu('');
+                 }} className="text-slate-400 hover:text-white" title="Upload File"><Upload className="w-4 h-4" /></button>
                </div>
              </div>
-            <div className="space-y-4">
-              {sortedDirs.map(dir => (
-                <div key={dir}>
-                  <div className="flex items-center gap-2 text-sm text-slate-200 py-1.5 font-medium">
-                    <FolderOpen className="w-4 h-4 text-amber-400" />
-                    <span>{dir || 'root'}</span>
-                  </div>
-                  <div className="pl-5 space-y-1 border-l border-white/5 ml-2 mt-1">
-                    {tree[dir].map(file => (
-                      <div 
-                        key={file.id}
-                        onClick={() => { setActiveFile(file.id); setOpenedTabs(p => p.includes(file.id) ? p : [...p, file.id]); }}
-                        className={`group pl-2 py-1 pr-1 flex items-center justify-between cursor-pointer transition-colors ${activeFile === file.id ? 'text-emerald-400 bg-emerald-500/10 rounded' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 rounded'}`}
-                      >
-                        <div className="flex items-center gap-2 text-[13px] overflow-hidden min-w-0">
-                          <FileCode2 className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate">{file.name}</span>
-                        </div>
-                        <DropdownMenu.Root>
-                           <DropdownMenu.Trigger asChild>
-                              <button onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded p-1">
-                                 <MoreVertical className="w-3.5 h-3.5" />
-                              </button>
-                           </DropdownMenu.Trigger>
-                           <DropdownMenu.Portal>
-                              <DropdownMenu.Content align="end" sideOffset={2} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[120px] z-50">
-                                 <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); setChatInput((prev) => prev + (prev.endsWith(' ') || prev === '' ? '' : ' ') + `{${file.path}}`); setIsChatOpen(true); }} className="px-3 py-1.5 text-xs text-indigo-300 hover:bg-indigo-500/10 hover:text-indigo-200 cursor-pointer outline-none flex items-center gap-2">
-                                     <Link className="w-3 h-3" /> Reference
-                                 </DropdownMenu.Item>
-                                 <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleRenameFile(file.id); }} className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2">
-                                     <Type className="w-3 h-3" /> Rename
-                                 </DropdownMenu.Item>
-                                 <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleDeleteFile(file.id); }} className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 cursor-pointer outline-none flex items-center gap-2">
-                                     <Trash2 className="w-3 h-3" /> Delete
-                                 </DropdownMenu.Item>
-                              </DropdownMenu.Content>
-                           </DropdownMenu.Portal>
-                        </DropdownMenu.Root>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+            <div className="space-y-1">
+              {renderTree(treeRoot)}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Meld-style Diff Modal */}
-      <AnimatePresence>
-        {proposedMergeCode !== null && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6"
-          >
-            <motion.div 
-              initial={{ scale: 0.95, y: 10 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 10 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="bg-[#121214] border border-white/10 shadow-2xl rounded-xl w-full h-full flex flex-col overflow-hidden max-w-7xl max-h-[90vh]"
-            >
-              <div className="h-14 border-b border-white/10 bg-[#16161a] flex flex-wrap items-center justify-between px-6 shrink-0 gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="bg-emerald-500/10 p-1.5 rounded-lg border border-emerald-500/20">
-                    <GitMerge className="w-5 h-5 text-emerald-400" />
-                  </div>
-                  <h2 className="text-emerald-400 font-semibold text-sm">Review AI Proposal</h2>
-                  <span className="hidden sm:inline-block text-xs text-slate-500 font-mono ml-4 px-2 py-1 bg-black/30 rounded border border-white/5">{filesData[activeFile]?.path}</span>
-                </div>
-                <div className="flex gap-3">
-                   <button onClick={() => setProposedMergeCode(null)} className="px-4 py-2 rounded-md border border-white/10 text-xs font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors">Discard</button>
-                   <button onClick={() => {
-                      handleAddFile(filesData[activeFile].path, proposedMergeCode);
-                      setProposedMergeCode(null);
-                   }} className="px-4 py-2 text-xs font-semibold bg-emerald-500/90 text-white rounded-md hover:bg-emerald-400 transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]">Accept Changes</button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-auto bg-[#0c0c0e]">
-                <ReactDiffViewer 
-                  oldValue={filesData[activeFile]?.content || ''} 
-                  newValue={proposedMergeCode} 
-                  splitView={true} 
-                  useDarkTheme={true}
-                  leftTitle={`${filesData[activeFile]?.name} (Current)`}
-                  rightTitle={`${filesData[activeFile]?.name} (AI Proposed)`}
-                  styles={{
-                    variables: {
-                      dark: {
-                        diffViewerBackground: '#0c0c0e',
-                        diffViewerColor: '#cbd5e1',
-                        diffViewerTitleBackground: '#121214',
-                        diffViewerTitleColor: '#94a3b8',
-                        diffViewerTitleBorderColor: '#27272a',
-                        addedBackground: '#064e3b',
-                        addedColor: '#34d399',
-                        removedBackground: '#4c0519',
-                        removedColor: '#f43f5e',
-                        wordAddedBackground: '#047857',
-                        wordRemovedBackground: '#9f1239',
-                        addedGutterBackground: '#064e3b',
-                        removedGutterBackground: '#4c0519',
-                        gutterBackground: '#0c0c0e',
-                        gutterBackgroundDark: '#0c0c0e',
-                        highlightBackground: '#1e1e24',
-                        highlightGutterBackground: '#1e1e24',
-                        codeFoldGutterBackground: '#0c0c0e',
-                        codeFoldBackground: '#0c0c0e',
-                        emptyLineBackground: '#0c0c0e',
-                        gutterColor: '#475569',
-                        addedGutterColor: '#10b981',
-                        removedGutterColor: '#e11d48',
-                        codeFoldContentColor: '#64748b',
-                      }
-                    }
-                  }}
-                />
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <DiffViewerModal
+        proposedMergeCode={proposedMergeCode}
+        setProposedMergeCode={setProposedMergeCode}
+        filesData={filesData}
+        activeFile={activeFile}
+        handleAddFile={handleAddFile}
+      />
+      <PromptDialog 
+        isOpen={promptDialog.isOpen}
+        title={promptDialog.title}
+        defaultValue={promptDialog.defaultValue}
+        onResolve={(val) => promptDialog.onResolve?.(val)}
+        onClose={() => setPromptDialog(p => ({...p, isOpen: false}))}
+      />
 
-      {/* Prompt Dialog */}
-      <AnimatePresence>
-        {promptDialog.isOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          >
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#1e1e1e] border border-white/10 p-6 rounded-xl w-full max-w-md shadow-2xl"
-            >
-              <h3 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider">{promptDialog.title}</h3>
-              <input 
-                autoFocus
-                type="text"
-                className="w-full bg-[#121214] border border-white/10 rounded px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 transition-colors font-mono"
-                defaultValue={promptDialog.defaultValue}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    promptDialog.onResolve?.(e.currentTarget.value);
-                    setPromptDialog(p => ({...p, isOpen: false}));
-                  } else if (e.key === 'Escape') {
-                    promptDialog.onResolve?.(null);
-                    setPromptDialog(p => ({...p, isOpen: false}));
-                  }
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1e1e24] border border-[#27272a] shadow-2xl rounded-xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
+            <h2 className="text-lg font-semibold text-white mb-2">{confirmDialog.title}</h2>
+            <p className="text-sm text-slate-400 mb-6 whitespace-pre-wrap">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => {
+                   confirmDialog.onResolve?.(false);
+                   setConfirmDialog(p => ({...p, isOpen: false}));
                 }}
-              />
-              <div className="flex justify-end gap-3 mt-6">
-                <button 
+                className="px-4 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 rounded transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                   confirmDialog.onResolve?.(true);
+                   setConfirmDialog(p => ({...p, isOpen: false}));
+                }}
+                className="px-4 py-2 text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-white rounded transition-colors shadow-lg shadow-emerald-500/20"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {multiChoiceDialog.isOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1e1e24] border border-[#27272a] shadow-2xl rounded-xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
+            <h2 className="text-lg font-semibold text-white mb-2">{multiChoiceDialog.title}</h2>
+            <p className="text-sm text-slate-400 mb-6 whitespace-pre-wrap">{multiChoiceDialog.message}</p>
+            <div className="flex flex-col gap-3">
+              {multiChoiceDialog.choices.map((choice) => (
+                <button
+                  key={choice.value}
                   onClick={() => {
-                    promptDialog.onResolve?.(null);
-                    setPromptDialog(p => ({...p, isOpen: false}));
+                     multiChoiceDialog.onResolve?.(choice.value);
+                     setMultiChoiceDialog(p => ({...p, isOpen: false}));
                   }}
-                  className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors"
+                  className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
+                    choice.variant === 'primary' ? 'bg-indigo-500 hover:bg-indigo-400 text-white shadow-lg shadow-indigo-500/20' :
+                    choice.variant === 'danger' ? 'bg-red-500/20 hover:bg-red-500/30 text-red-500 hover:text-red-400 border border-red-500/30' :
+                    'text-slate-300 hover:bg-white/5 border border-transparent'
+                  }`}
                 >
-                  Cancel
+                  {choice.label}
                 </button>
-                <button 
-                  onClick={(e) => {
-                    const input = e.currentTarget.parentElement?.parentElement?.querySelector('input');
-                    promptDialog.onResolve?.(input?.value || '');
-                    setPromptDialog(p => ({...p, isOpen: false}));
-                  }}
-                  className="px-4 py-2 text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-white rounded transition-colors shadow-[0_0_15px_rgba(16,185,129,0.3)]"
-                >
-                  Confirm
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {fileToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1e1e24] border border-[#27272a] shadow-2xl rounded-lg w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-medium text-slate-200 mb-2">Delete File</h3>
+            <p className="text-sm text-slate-400 mb-6">
+              Are you sure you want to delete <span className="font-mono text-emerald-400">{filesData[fileToDelete]?.name}</span>? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3 flex-shrink-0">
+              <button 
+                onClick={() => setFileToDelete(null)}
+                className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white bg-[#27272a] hover:bg-[#323236] rounded-md transition-colors outline-none focus:ring-2 focus:ring-emerald-500/50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  confirmDeleteFile(fileToDelete);
+                  setFileToDelete(null);
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-md transition-colors shadow-sm outline-none focus:ring-2 focus:ring-red-500/50"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* GitHub Gist Export Logs Dialog */}
-      <AnimatePresence>
-        {gistExportDialog.isOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          >
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#1e1e1e] border border-white/10 p-6 rounded-lg shadow-2xl w-full max-w-2xl flex flex-col max-h-[80vh]"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-white tracking-wider flex items-center gap-2">
-                  <Github className="w-5 h-5" />
-                  Exporting to GitHub Repository
-                </h3>
-                <button 
-                  onClick={() => setGistExportDialog(prev => ({...prev, isOpen: false}))}
-                  className="text-slate-400 hover:text-white transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              
-              <div className="flex-1 overflow-auto bg-[#121214] border border-white/5 rounded-md p-4 space-y-1.5 mb-4 shadow-inner">
-                {gistExportDialog.logs.map((log, i) => (
-                  <div key={i} className="text-slate-300 font-mono text-[11px] leading-relaxed break-all flex">
-                    <span className="text-emerald-400 mr-3 opacity-70 w-3 font-bold select-none">{'>'}</span>
-                    <span className="flex-1">{log}</span>
-                  </div>
-                ))}
-                {gistExportDialog.error && (
-                  <div className="text-rose-400 mt-2 font-mono text-[11px] leading-relaxed flex">
-                    <span className="mr-3 font-bold select-none">{'!'}</span>
-                    <span className="flex-1">{gistExportDialog.error}</span>
-                  </div>
-                )}
-                {/* Scroll anchor */}
-                <div 
-                  ref={el => el?.scrollIntoView({ behavior: 'smooth' })} 
-                  className="h-1"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 mt-auto">
-                <button 
-                  onClick={() => setGistExportDialog(prev => ({...prev, isOpen: false}))}
-                  className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors"
-                >
-                  Close
-                </button>
-                {gistExportDialog.finalUrl ? (
-                  <a 
-                    href={gistExportDialog.finalUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 text-xs font-semibold bg-indigo-500 hover:bg-indigo-400 text-white rounded transition-colors flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
-                  >
-                    <Link className="w-3.5 h-3.5" />
-                    Open in GitHub
-                  </a>
-                ) : gistExportDialog.error ? null : (
-                  <button 
-                    disabled
-                    className="px-4 py-2 text-xs font-semibold bg-slate-800 text-slate-400 rounded flex items-center gap-2 cursor-not-allowed"
-                  >
-                    <svg className="animate-spin h-3.5 w-3.5 text-indigo-400" xmlns="http://www.w3.org/AspectRatio" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Processing...
-                  </button>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <GithubExportDialog 
+        isOpen={gistExportDialog.isOpen}
+        logs={gistExportDialog.logs}
+        finalUrl={gistExportDialog.finalUrl}
+        error={gistExportDialog.error}
+        onClose={() => setGistExportDialog(prev => ({...prev, isOpen: false}))}
+      />
     </div>
   );
 }
