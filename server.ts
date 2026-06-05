@@ -207,23 +207,37 @@ async function startServer() {
           };
 
           if (proxy) {
-             const { ProxyAgent } = require('undici');
+             const { fetch: undiciFetch, ProxyAgent } = require('undici');
              fetchOptions.dispatcher = new ProxyAgent(proxy);
+             
+             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+          
+             const response = await undiciFetch(apiUrl, fetchOptions);
+             
+             if (!response.ok) {
+                 const errData: any = await response.json();
+                 throw new Error(`Gemini Server Error: ${errData?.error?.message || response.statusText}`);
+             }
+             
+             const data: any = await response.json();
+             const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+             return res.json({ message: { role: 'assistant', content: text } });
+             
+          } else {
+             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+             
+             const response = await fetch(apiUrl, fetchOptions);
+             
+             if (!response.ok) {
+                 const errData = await response.json();
+                 throw new Error(`Gemini Server Error: ${errData?.error?.message || response.statusText}`);
+             }
+             
+             const data = await response.json();
+             const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+             
+             return res.json({ message: { role: 'assistant', content: text } });
           }
-
-          const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-          
-          const response = await fetch(apiUrl, fetchOptions);
-          
-          if (!response.ok) {
-              const errData = await response.json();
-              throw new Error(`Gemini Server Error: ${errData?.error?.message || response.statusText}`);
-          }
-          
-          const data = await response.json();
-          const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-          return res.json({ message: { role: 'assistant', content: text } });
       }
     } catch (err: any) {
       console.error('Chat Error:', err);
