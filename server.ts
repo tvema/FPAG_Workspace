@@ -432,6 +432,14 @@ async function startServer() {
       
       let result: any = { success: true };
       
+      let isRepo = false;
+      try {
+        await fs.access(nodePath.join(exportDir, '.git'));
+        isRepo = true;
+      } catch {
+        isRepo = false;
+      }
+
       if (action === 'init') {
         // First dump all files from DB to disk to ensure they exist
         const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string, is_link: number }[];
@@ -443,10 +451,8 @@ async function startServer() {
         }
         await git.init();
       } else if (action === 'add') {
-        const isRepo = await git.checkIsRepo();
         if (isRepo) await git.add(path);
       } else if (action === 'rm') {
-        const isRepo = await git.checkIsRepo();
         if (isRepo) {
            try { await git.rm(path); } catch(e) {
              // If not in index, just ignore or try to unstage
@@ -454,7 +460,6 @@ async function startServer() {
            }
         }
       } else if (action === 'commit') {
-        const isRepo = await git.checkIsRepo();
         if (isRepo) {
           await git.addConfig('user.name', 'Workspace User');
           await git.addConfig('user.email', 'workspace@example.com');
@@ -484,7 +489,14 @@ async function startServer() {
       try { await fs.access(exportDir); } catch { await fs.mkdir(exportDir, { recursive: true }); }
       const git = simpleGit(exportDir);
       
-      const isRepo = await git.checkIsRepo();
+      let isRepo = false;
+      try {
+        await fs.access(nodePath.join(exportDir, '.git'));
+        isRepo = true;
+      } catch {
+        isRepo = false;
+      }
+
       if (!isRepo) {
         return res.json({ isRepo: false, status: {} });
       }
