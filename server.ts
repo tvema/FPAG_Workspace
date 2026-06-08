@@ -45,6 +45,12 @@ try {
   // column might already exist
 }
 
+try {
+  db.exec(`ALTER TABLE files ADD COLUMN is_link BOOLEAN DEFAULT 0`);
+} catch (e) {
+  // column might already exist
+}
+
 db.exec(`INSERT OR IGNORE INTO projects (id, name) VALUES ('default', 'Default Project')`);
 
 async function startServer() {
@@ -107,17 +113,18 @@ async function startServer() {
   // Save or update file
   app.post("/api/files", (req, res) => {
     try {
-      const { id, name, path, type, content, project_id = 'default' } = req.body;
+      const { id, name, path, type, content, project_id = 'default', is_link = 0 } = req.body;
       db.prepare(`
-        INSERT INTO files (id, name, path, type, content, project_id) 
-        VALUES (?, ?, ?, ?, ?, ?) 
+        INSERT INTO files (id, name, path, type, content, project_id, is_link) 
+        VALUES (?, ?, ?, ?, ?, ?, ?) 
         ON CONFLICT(id) DO UPDATE SET 
           name=excluded.name, 
           path=excluded.path, 
           type=excluded.type, 
           content=excluded.content,
-          project_id=excluded.project_id
-      `).run(id, name, path, type, content, project_id);
+          project_id=excluded.project_id,
+          is_link=excluded.is_link
+      `).run(id, name, path, type, content, project_id, is_link);
       res.json({ success: true, id });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -381,7 +388,7 @@ async function startServer() {
   // Local Build Endpoint
   app.post('/api/build/local', async (req, res) => {
     try {
-      const { projectId = 'default', target = '' } = req.body;
+      const { projectId = 'default', target = '', workDir = '' } = req.body;
       
       const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
       if (!project) throw new Error("Project not found");
@@ -409,14 +416,47 @@ async function startServer() {
       }
       
       const cmd = target ? `make ${target}` : `make`;
+      const runDir = workDir ? nodePath.resolve(exportDir, workDir) : exportDir;
       
-      const { stdout, stderr } = await execAsync(cmd, { cwd: exportDir });
+      // prevent directory traversal
+      if (!runDir.startsWith(exportDir)) {
+          throw new Error("Invalid work directory");
+      }
+      
+      const { stdout, stderr } = await execAsync(cmd, { cwd: runDir });
       
       res.json({ success: true, output: stdout + (stderr ? '\n' + stderr : '') });
     } catch (err: any) {
       console.error('Local build error:', err);
       const combinedOutput = [err.stdout, err.stderr].filter(Boolean).join('\n');
       res.status(500).json({ error: err.message, output: combinedOutput || err.message });
+    }
+  });
+
+  app.get('/api/build/local/file', async (req, res) => {
+    try {
+      const projectId = req.query.projectId as string;
+      const filePath = req.query.path as string;
+      if (!projectId || !filePath) return res.status(400).json({ error: "Missing params" });
+      
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      
+      const fs = await import('fs/promises');
+      const nodePath = await import('path');
+      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+      const fullPath = nodePath.resolve(exportDir, filePath);
+      
+      // prevent directory traversal
+      if (!fullPath.startsWith(exportDir)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const content = await fs.readFile(fullPath, 'utf8');
+      res.json({ content });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

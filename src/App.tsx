@@ -11,6 +11,7 @@ import { PromptDialog } from './components/PromptDialog';
 import { GithubExportDialog } from './components/GithubExportDialog';
 import { DiffViewerModal } from './components/DiffViewerModal';
 import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
+import { TestbenchDialog } from './components/TestbenchDialog';
 import { parseVCD } from './utils/vcdParser';
 import { parseVerilog } from './utils/verilogParser';
 import ReactMarkdown from 'react-markdown';
@@ -67,7 +68,7 @@ const initialFiles: Record<string, any> = {
 };
 
 export default function App() {
-  const [filesData, setFilesData] = useState<Record<string, {name: string, path: string, type: string, content: string}>>({});
+  const [filesData, setFilesData] = useState<Record<string, {name: string, path: string, type: string, content: string, is_link?: boolean}>>({});
   const [activeFile, setActiveFile] = useState<string>('');
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
@@ -92,6 +93,13 @@ export default function App() {
   const [isExportingGist, setIsExportingGist] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
   const [githubToken, setGithubToken] = useState<string | null>(() => localStorage.getItem('github_token'));
+
+  const [testbenchDialog, setTestbenchDialog] = useState<{
+    isOpen: boolean;
+    parentPath: string;
+    filesToInclude: string[];
+    tbName: string;
+  }>({ isOpen: false, parentPath: '', filesToInclude: [], tbName: 'tb_module' });
 
   const [promptDialog, setPromptDialog] = useState<{
     isOpen: boolean;
@@ -395,13 +403,41 @@ export default function App() {
 
   const handleRunMake = async () => {
     setIsBuildingLocal(true);
-    setBuildDialog({ isOpen: true, logs: ['Syncing files and running Make local server...'], error: null });
+    
+    // Determine working directory for make
+    let workDir = '';
+    if (activeFile && filesData[activeFile]) {
+       const activePath = filesData[activeFile].path;
+       const parts = activePath.split('/');
+       parts.pop(); // remove file name
+       workDir = parts.join('/');
+       
+       // Traverse up to find a Makefile
+       while (workDir.length > 0) {
+           const prefix = workDir + '/';
+           const hasMakefile = Object.values(filesData).some(f => f.path === prefix + 'Makefile');
+           if (hasMakefile) break;
+           const pathParts = workDir.split('/');
+           pathParts.pop();
+           workDir = pathParts.join('/');
+       }
+       // If empty, check root
+       if (workDir === '') {
+           const hasRootMake = Object.values(filesData).some(f => f.path === 'Makefile');
+           if (!hasRootMake) {
+               // Make might fail, but let's just use root
+           }
+       }
+    }
+
+    const logPrefix = workDir ? `[${workDir}] ` : '';
+    setBuildDialog({ isOpen: true, logs: [`${logPrefix}Syncing files and running Make...`], error: null });
     
     try {
       const response = await fetch('/api/build/local', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: activeProject || 'default', target: '' })
+        body: JSON.stringify({ projectId: activeProject || 'default', target: '', workDir })
       });
       
       const data = await response.json();
@@ -415,6 +451,20 @@ export default function App() {
         ...prev, 
         logs: [...prev.logs, ...outputLines] 
       }));
+      
+      // Reload any linked files (like VCD output)
+      const linkFiles = Object.entries(filesData).filter(([_, f]) => f.is_link);
+      for (const [id, f] of linkFiles) {
+        try {
+          const res = await fetch(`/api/build/local/file?projectId=${activeProject}&path=${encodeURIComponent(f.path)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setFilesData(prev => ({ ...prev, [id]: { ...f, content: data.content } }));
+          }
+        } catch (e) {
+          console.error("Failed to fetch link file:", e);
+        }
+      }
     } catch (err: any) {
       console.error('Local build failed:', err);
       const outputLines = err.message ? err.message.split('\n') : [];
@@ -609,6 +659,7 @@ export default function App() {
         const isCollapsed = collapsedDirs[node.path] ?? (node.type !== 'folder');
 
         if (node.type === 'folder') {
+          const isTestbenchFolder = node.children['Makefile'] !== undefined || node.name.startsWith('tb_') || node.name.endsWith('_tb');
           return (
             <div key={node.path}>
               <div 
@@ -617,8 +668,8 @@ export default function App() {
               >
                 <div className="flex items-center gap-1.5" onClick={() => setCollapsedDirs(prev => ({ ...prev, [node.path]: !isCollapsed }))}>
                   {isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-                  <FolderOpen className="w-4 h-4 text-amber-400" />
-                  <span>{node.name}</span>
+                  {isTestbenchFolder ? <Box className="w-4 h-4 text-emerald-400 fill-emerald-400/20" /> : <FolderOpen className="w-4 h-4 text-amber-400" />}
+                  <span className={isTestbenchFolder ? "text-emerald-300 font-semibold" : ""}>{node.name}</span>
                 </div>
                 <DropdownMenu.Root>
                    <DropdownMenu.Trigger asChild>
@@ -661,6 +712,16 @@ export default function App() {
                            className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
                          >
                              <Upload className="w-3 h-3" /> Upload File(s)
+                         </DropdownMenu.Item>
+                         <DropdownMenu.Separator className="h-px bg-white/5 my-1" />
+                         <DropdownMenu.Item 
+                           onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setTestbenchDialog({ isOpen: true, parentPath: node.path === '' ? '' : node.path + '/', filesToInclude: [], tbName: 'tb_module' });
+                           }} 
+                           className="px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 cursor-pointer outline-none flex items-center gap-2"
+                         >
+                             <Box className="w-3 h-3" /> Create Testbench
                          </DropdownMenu.Item>
                       </DropdownMenu.Content>
                    </DropdownMenu.Portal>
@@ -750,12 +811,12 @@ export default function App() {
       });
   };
 
-  const handleAddFile = async (path: string, content: string, projId?: string) => {
+  const handleAddFile = async (path: string, content: string, projId?: string, is_link?: boolean) => {
       const targetProj = projId || activeProject;
       const id = `${targetProj}_${path.replace(/[^a-zA-Z0-9]/g, '_')}`;
       const name = path.split('/').pop() || id;
       const type = path.split('.').pop() || 'txt';
-      const fileObj = { name, path, content, type };
+      const fileObj = { name, path, content, type, is_link };
       
       setFilesData(prev => ({
           ...prev,
@@ -764,7 +825,87 @@ export default function App() {
       setActiveFile(id);
       setOpenedTabs(prev => prev.includes(id) ? prev : [...prev, id]);
 
-      if (targetProj) await saveFileDirect(id, fileObj, targetProj);
+      if (targetProj && !is_link) await saveFileDirect(id, fileObj, targetProj);
+      else if (targetProj && is_link) {
+          // save link file explicitly using saveFileDirect with its flag
+          fetch('/api/files', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ id, project_id: targetProj, ...fileObj })
+          }).catch(console.error);
+      }
+  };
+
+  const handleCreateTestbench = async (tbName: string, filesToInclude: string[]) => {
+      const parent = testbenchDialog.parentPath;
+      const tbFolder = parent + tbName + '/';
+
+      // 1. Generate tb_module.v
+      const tbPath = tbFolder + tbName + '.v';
+      const tbContent = `\`timescale 1ns / 1ps
+
+module ${tbName};
+
+    // Auto-generated Testbench for ${tbName}
+    // Add your signals and instantiation here
+    
+    initial begin
+        $dumpfile("${tbName}.vcd");
+        $dumpvars(0, ${tbName});
+        
+        // Simulation logic
+        #100;
+        
+        $finish;
+    end
+
+endmodule
+`;
+      await handleAddFile(tbPath, tbContent, activeProject || undefined);
+
+      // 2. Generate Makefile
+      const makefilePath = tbFolder + 'Makefile';
+      
+      // Calculate relative paths for included files
+      // Assuming flat hierarchy for now, or prefixing with ../ as needed.
+      // Easiest is to prefix with `../` since tbFolder is one level deeper than parent.
+      const mappedFiles = filesToInclude.map(f => {
+          if (f.startsWith(parent)) {
+              return '../' + f.slice(parent.length);
+          }
+          // If elsewhere, we could compute full relative, but let's do a simple fix
+          // by just using a relative path to workspace root
+          const depth = tbFolder.split('/').filter(Boolean).length;
+          const up = '../'.repeat(depth);
+          return up + f;
+      });
+
+      const makefileContent = `VERILATOR=verilator
+IVERILOG=iverilog
+VVP=vvp
+
+# Target executable
+TARGET = ${tbName}.vvp
+
+# Source files
+SOURCES = ${mappedFiles.join(' ')} ${tbName}.v
+
+all: run
+
+build:
+\t$(IVERILOG) -o $(TARGET) $(SOURCES)
+
+run: build
+\t$(VVP) $(TARGET)
+
+clean:
+\trm -f $(TARGET) *.vcd
+`;
+      await handleAddFile(makefilePath, makefileContent, activeProject || undefined);
+
+      // 3. Create a link to the output VCD file
+      const vcdPath = tbFolder + tbName + '.vcd';
+      await handleAddFile(vcdPath, 'Waiting for generated VCD file after Make...', activeProject || undefined, true);
   };
 
   const handleFileUploadMenu = (targetPath: string) => {
@@ -1231,6 +1372,9 @@ export default function App() {
                        }
                    }} className="text-slate-400 hover:text-white" title="New File"><FilePlus className="w-4 h-4" /></button>
                    <button onClick={() => {
+                       setTestbenchDialog({ isOpen: true, parentPath: '', filesToInclude: [], tbName: 'tb_module' });
+                   }} className="text-slate-400 hover:text-white" title="Create Testbench"><Box className="w-4 h-4" /></button>
+                   <button onClick={() => {
                        handleFileUploadMenu('');
                    }} className="text-slate-400 hover:text-white" title="Upload File"><Upload className="w-4 h-4" /></button>
                  </div>
@@ -1250,6 +1394,14 @@ export default function App() {
         activeFile={activeFile}
         handleAddFile={handleAddFile}
       />
+      <TestbenchDialog
+        isOpen={testbenchDialog.isOpen}
+        onClose={() => setTestbenchDialog(p => ({ ...p, isOpen: false }))}
+        filesData={filesData}
+        parentPath={testbenchDialog.parentPath}
+        onCreate={handleCreateTestbench}
+      />
+      
       <PromptDialog 
         isOpen={promptDialog.isOpen}
         title={promptDialog.title}
