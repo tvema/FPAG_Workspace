@@ -1167,11 +1167,11 @@ int main(int argc, char** argv) {
 
       {/* Main Content */}
       <div className="flex-1 w-full overflow-hidden">
-        <PanelGroup orientation="horizontal" autoSaveId="workspace-horizontal-v5">
+        <PanelGroup orientation="horizontal" id="workspace-horizontal-v5">
           {/* Ollama Chat Left Panel */}
           {isChatOpen && (
             <>
-              <Panel id="chat" order={1} defaultSize={25} minSize={15} className="flex flex-col z-20 bg-[#16161a]">
+              <Panel id="chat" defaultSize={25} minSize={15} className="flex flex-col z-20 bg-[#16161a]">
                 <OllamaChat 
                    onAddFile={handleAddFile} 
                    activeFileId={activeFile} 
@@ -1189,9 +1189,9 @@ int main(int argc, char** argv) {
           )}
 
           {/* Editor Area (Middle) */}
-          <Panel id="editor" order={2} defaultSize={isChatOpen ? 55 : 80} minSize={30} className="flex flex-col min-w-0 bg-[#1e1e1e]">
-            <PanelGroup orientation="vertical" autoSaveId="workspace-vertical-v5">
-              <Panel id="editor-main" order={1} defaultSize={buildDialog.isOpen ? 70 : 100} className="flex flex-col relative min-h-0">
+          <Panel id="editor" defaultSize={isChatOpen ? 55 : 80} minSize={30} className="flex flex-col min-w-0 bg-[#1e1e1e]">
+            <PanelGroup orientation="vertical" id="workspace-vertical-v5">
+              <Panel id="editor-main" defaultSize={buildDialog.isOpen ? 70 : 100} className="flex flex-col relative min-h-0">
                 <div className="flex bg-[#121214] border-b border-black/50 overflow-x-auto no-scrollbar shrink-0">
             {openedTabs.map(id => (
               <div 
@@ -1279,7 +1279,7 @@ int main(int argc, char** argv) {
           {buildDialog.isOpen && (
             <>
               <PanelResizeHandle className="h-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-row-resize z-50 relative" />
-              <Panel id="build-output" order={2} defaultSize={30} minSize={10} className="bg-[#0a0a0c] flex flex-col border-t border-white/10 relative">
+              <Panel id="build-output" defaultSize={30} minSize={10} className="bg-[#0a0a0c] flex flex-col border-t border-white/10 relative">
                  <div className="flex items-center justify-between p-2 pt-1 border-b border-white/5 bg-[#121214] shrink-0">
                    <div className="text-xs font-semibold text-slate-400 flex items-center gap-2">
                      <Terminal className="w-3.5 h-3.5" /> Make Output
@@ -1365,7 +1365,7 @@ int main(int argc, char** argv) {
           <PanelResizeHandle className="w-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-col-resize z-50 relative" />
 
           {/* Sidebar Project Tree (Right) */}
-          <Panel id="files" order={3} defaultSize={20} minSize={15} className="bg-[#121214] border-l border-white/10 flex flex-col z-10">
+          <Panel id="files" defaultSize={20} minSize={15} className="bg-[#121214] border-l border-white/10 flex flex-col z-10">
             <div className="p-4 overflow-y-auto w-full">
                <div className="flex items-center justify-between mb-3 w-full">
                  <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Project</h2>
