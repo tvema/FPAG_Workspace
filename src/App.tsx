@@ -8,6 +8,7 @@ import JSZip from 'jszip';
 import Editor from '@monaco-editor/react';
 import { PromptDialog } from './components/PromptDialog';
 import { GithubExportDialog } from './components/GithubExportDialog';
+import { BuildDialog } from './components/BuildDialog';
 import { DiffViewerModal } from './components/DiffViewerModal';
 import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
 import { parseVCD } from './utils/vcdParser';
@@ -136,6 +137,13 @@ export default function App() {
     finalUrl: string | null;
     error: string | null;
   }>({ isOpen: false, logs: [], finalUrl: null, error: null });
+
+  const [buildDialog, setBuildDialog] = useState<{
+    isOpen: boolean;
+    logs: string[];
+    error: string | null;
+  }>({ isOpen: false, logs: [], error: null });
+  const [isBuildingLocal, setIsBuildingLocal] = useState(false);
 
   const customPrompt = (title: string, defaultValue: string = ''): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -382,6 +390,41 @@ export default function App() {
       setGistExportDialog(prev => ({ ...prev, error: err.message || 'Export failed' }));
     } finally {
       setIsExportingGist(false);
+    }
+  };
+
+  const handleRunMake = async () => {
+    setIsBuildingLocal(true);
+    setBuildDialog({ isOpen: true, logs: ['Syncing files and running Make local server...'], error: null });
+    
+    try {
+      const response = await fetch('/api/build/local', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: activeProject || 'default', target: '' })
+      });
+      
+      const data = await response.json();
+      const outputLines = data.output ? data.output.split('\n') : [];
+      
+      if (!response.ok) {
+        throw new Error(data.output || data.error || `Server returned ${response.status}`);
+      }
+      
+      setBuildDialog(prev => ({ 
+        ...prev, 
+        logs: [...prev.logs, ...outputLines] 
+      }));
+    } catch (err: any) {
+      console.error('Local build failed:', err);
+      const outputLines = err.message ? err.message.split('\n') : [];
+      setBuildDialog(prev => ({ 
+        ...prev, 
+        error: "Make process failed.",
+        logs: [...prev.logs, ...outputLines] 
+      }));
+    } finally {
+      setIsBuildingLocal(false);
     }
   };
 
@@ -931,6 +974,15 @@ export default function App() {
             {isExportingGist ? 'Exporting...' : 'Export to Local Git'}
           </button>
           
+          <button 
+            onClick={handleRunMake}
+            disabled={isBuildingLocal}
+            className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Play className="w-3.5 h-3.5" />
+            {isBuildingLocal ? 'Building...' : 'Run Make'}
+          </button>
+          
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <button className="bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-slate-300 p-1.5 rounded-md transition-colors outline-none hidden sm:flex items-center justify-center cursor-pointer">
@@ -1202,6 +1254,14 @@ export default function App() {
         error={gistExportDialog.error}
         isProcessing={isExportingGist}
         onClose={() => setGistExportDialog(prev => ({...prev, isOpen: false}))}
+      />
+
+      <BuildDialog 
+        isOpen={buildDialog.isOpen}
+        logs={buildDialog.logs}
+        error={buildDialog.error}
+        isProcessing={isBuildingLocal}
+        onClose={() => setBuildDialog(prev => ({...prev, isOpen: false}))}
       />
     </div>
   );

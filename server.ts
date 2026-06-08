@@ -378,6 +378,48 @@ async function startServer() {
     }
   });
 
+  // Local Build Endpoint
+  app.post('/api/build/local', async (req, res) => {
+    try {
+      const { projectId = 'default', target = '' } = req.body;
+      
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
+      if (!project) throw new Error("Project not found");
+
+      const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string }[];
+      
+      const fs = await import('fs/promises');
+      const nodePath = await import('path');
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+      
+      // Determine export dir: projects_export/<project_name_sanitized>
+      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+      
+      await fs.mkdir(exportDir, { recursive: true });
+      
+      // Write files
+      for (const file of files) {
+        if (file.path.endsWith('.gitkeep')) continue;
+        const fullPath = nodePath.resolve(exportDir, file.path);
+        await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+        await fs.writeFile(fullPath, file.content || '', 'utf8');
+      }
+      
+      const cmd = target ? `make ${target}` : `make`;
+      
+      const { stdout, stderr } = await execAsync(cmd, { cwd: exportDir });
+      
+      res.json({ success: true, output: stdout + (stderr ? '\n' + stderr : '') });
+    } catch (err: any) {
+      console.error('Local build error:', err);
+      const combinedOutput = [err.stdout, err.stderr].filter(Boolean).join('\n');
+      res.status(500).json({ error: err.message, output: combinedOutput || err.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
