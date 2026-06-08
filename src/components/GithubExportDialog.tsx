@@ -28,7 +28,7 @@ export function GithubExportDialog({ isOpen, logs, finalUrl, error, onClose }: G
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-white tracking-wider flex items-center gap-2">
                 <Github className="w-5 h-5" />
-                Exporting to GitHub Repository
+                Exporting to Local Git Repository
               </h3>
               <button 
                 onClick={onClose}

@@ -351,147 +351,35 @@ export default function App() {
     }
   };
 
-  const handleExportGist = async () => {
-    const token = localStorage.getItem('github_token');
-    if (!token) return;
-    
+  const handleExportLocalGit = async () => {
     setIsExportingGist(true);
-    setGistExportDialog({ isOpen: true, logs: ['Starting GitHub repository export process...'], finalUrl: null, error: null });
+    setGistExportDialog({ isOpen: true, logs: ['Starting local git repository export process...'], finalUrl: null, error: null });
     
     const addLog = (log: string) => {
       setGistExportDialog(prev => ({ ...prev, logs: [...prev.logs, log] }));
     };
 
     try {
-      addLog('Fetching GitHub user profile...');
-      const userResp = await fetch('https://api.github.com/user', {
-        headers: { Authorization: `token ${token}` }
-      });
-      if (!userResp.ok) throw new Error('Failed to fetch user profile');
-      const user = await userResp.json();
-      const owner = user.login;
-      addLog(`Authenticated as GitHub user: ${owner}`);
-
-      const projectName = projects.find(p => p.id === activeProject)?.name || 'ai-studio-export';
-      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const repoName = sanitize(projectName);
-      
-      addLog(`Checking if repository ${repoName} exists...`);
-      const checkRepoResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, {
-        headers: { Authorization: `token ${token}` }
+      addLog('Sending project data to local server export endpoint...');
+      const response = await fetch('/api/export/local', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: activeProject || 'default', commitMessage: 'Workspace export update' })
       });
       
-      let repoData;
-      if (checkRepoResp.ok) {
-        repoData = await checkRepoResp.json();
-        addLog(`Found existing repository: ${repoName}`);
-      } else if (checkRepoResp.status === 404) {
-        addLog(`Creating new private repository: ${repoName}...`);
-        const repoResp = await fetch('https://api.github.com/user/repos', {
-          method: 'POST',
-          headers: {
-            'Authorization': `token ${token}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ name: repoName, private: true, auto_init: true })
-        });
-
-        if (!repoResp.ok) {
-          if (repoResp.status === 401) {
-             localStorage.removeItem('github_token');
-             setGithubToken(null);
-             throw new Error('Missing repo scope or token expired. Please reconnect your GitHub account.');
-          }
-          throw new Error(`Failed to create repository (HTTP ${repoResp.status})`);
-        }
-        
-        repoData = await repoResp.json();
-        addLog('Repository created successfully! Waiting for initialization...');
-        
-        // Wait for GitHub to initialize the default branch (main)
-        await new Promise(r => setTimeout(r, 2000));
-      } else {
-         if (checkRepoResp.status === 401) {
-            localStorage.removeItem('github_token');
-            setGithubToken(null);
-            throw new Error('Missing repo scope or token expired. Please reconnect your GitHub account.');
-         }
-         throw new Error(`Failed to check repository (HTTP ${checkRepoResp.status})`);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || `Server returned ${response.status}`);
       }
-
-      const defaultBranch = repoData.default_branch || 'main';
-      addLog(`Fetching HEAD reference for ${defaultBranch} branch...`);
-      const refResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/${defaultBranch}`, {
-         headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' }
-      });
-      if (!refResp.ok) throw new Error('Failed to get branch reference');
-      const refData = await refResp.json();
-      const commitSha = refData.object.sha;
-
-      addLog('Fetching base commit details...');
-      const commitResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/commits/${commitSha}`, {
-         headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' }
-      });
-      if (!commitResp.ok) throw new Error('Failed to fetch commit');
-      const commitData = await commitResp.json();
-      const baseTreeSha = commitData.tree.sha;
-
-      addLog('Building file tree from workspace...');
-      const tree = Object.values(filesData).filter((f: any) => !f.path.endsWith('.gitkeep')).map((f: any) => {
-        addLog(`Preparing file: ${f.path}`);
-        return {
-          path: f.path,
-          mode: '100644',
-          type: 'blob',
-          content: f.content || ' '
-        };
-      });
-
-      if (tree.length === 0) {
-        addLog('Workspace is empty, adding empty placeholder file.');
-        tree.push({ path: 'empty.txt', mode: '100644', type: 'blob', content: 'Empty workspace' });
-      }
-
-      addLog('Pushing file tree to GitHub...');
-      const treeResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/trees`, {
-        method: 'POST',
-        headers: { Authorization: `token ${token}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json' },
-        body: JSON.stringify({ base_tree: baseTreeSha, tree })
-      });
-      if (!treeResp.ok) throw new Error('Failed to create git tree');
-      const treeData = await treeResp.json();
-      const newTreeSha = treeData.sha;
-
-      addLog('Creating new commit with files...');
-      const createCommitResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/commits`, {
-        method: 'POST',
-        headers: { Authorization: `token ${token}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json' },
-        body: JSON.stringify({
-          message: `Exported ${projectName} from AI Studio Workspace`,
-          tree: newTreeSha,
-          parents: [commitSha]
-        })
-      });
-      if (!createCommitResp.ok) throw new Error('Failed to create commit');
-      const newCommitData = await createCommitResp.json();
-      const newCommitSha = newCommitData.sha;
-
-      addLog('Updating branch reference to final commit...');
-      const updateRefResp = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/${defaultBranch}`, {
-        method: 'PATCH',
-        headers: { Authorization: `token ${token}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github.v3+json' },
-        body: JSON.stringify({ sha: newCommitSha })
-      });
-      if (!updateRefResp.ok) throw new Error('Failed to update branch reference');
-
-      addLog('Successfully exported to GitHub Repository!');
-      addLog(`New Repository URL: https://github.com/${owner}/${repoName}`);
-      setGistExportDialog(prev => ({ ...prev, finalUrl: `https://github.com/${owner}/${repoName}` }));
-    } catch (error: any) {
-      console.error('Repo export failed:', error);
-      addLog(`Error exporting to GitHub: ${error.message}`);
-      setGistExportDialog(prev => ({ ...prev, error: error.message || 'Failed to export to GitHub' }));
+      
+      addLog(`Success! Repository exported and committed to:`);
+      addLog(data.path);
+      
+      setGistExportDialog(prev => ({ ...prev, finalUrl: null })); // No HTTP URL for local folder
+    } catch (err: any) {
+      console.error('Local export failed:', err);
+      setGistExportDialog(prev => ({ ...prev, error: err.message || 'Export failed' }));
     } finally {
       setIsExportingGist(false);
     }
@@ -1034,24 +922,14 @@ export default function App() {
             <Download className="w-3.5 h-3.5" />
             {isExporting ? 'Exporting...' : 'Export to ZIP'}
           </button>
-          {githubToken ? (
-            <button 
-              onClick={handleExportGist}
-              disabled={isExportingGist}
-              className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Github className="w-3.5 h-3.5" />
-              {isExportingGist ? 'Exporting...' : 'Export to GitHub'}
-            </button>
-          ) : (
-            <button 
-              onClick={() => handleConnectGitHub()}
-              className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-slate-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <Github className="w-3.5 h-3.5" />
-              Connect GitHub
-            </button>
-          )}
+          <button 
+            onClick={handleExportLocalGit}
+            disabled={isExportingGist}
+            className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Github className="w-3.5 h-3.5" />
+            {isExportingGist ? 'Exporting...' : 'Export to Local Git'}
+          </button>
           
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>

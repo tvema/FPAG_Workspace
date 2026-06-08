@@ -329,6 +329,55 @@ async function startServer() {
     }
   });
 
+  // Local Git Export Endpoint
+  app.post('/api/export/local', async (req, res) => {
+    try {
+      const { projectId = 'default', commitMessage = 'Auto-exported from Workspace' } = req.body;
+      
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
+      if (!project) throw new Error("Project not found");
+
+      const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string }[];
+      
+      const fs = await import('fs/promises');
+      const nodePath = await import('path');
+      const { simpleGit } = await import('simple-git');
+      
+      // Determine export dir: projects/<project_name_sanitized>
+      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+      
+      await fs.mkdir(exportDir, { recursive: true });
+      
+      // Write files
+      for (const file of files) {
+        if (file.path.endsWith('.gitkeep')) continue;
+        const fullPath = nodePath.resolve(exportDir, file.path);
+        await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+        await fs.writeFile(fullPath, file.content || '', 'utf8');
+      }
+      
+      // Git commit
+      const git = simpleGit(exportDir);
+      
+      const isRepo = await git.checkIsRepo();
+      if (!isRepo) {
+        await git.init();
+      }
+      
+      await git.add('./*');
+      const status = await git.status();
+      if (status.staged.length > 0 || status.not_added.length > 0) {
+          await git.commit(commitMessage);
+      }
+      
+      res.json({ success: true, path: exportDir });
+    } catch (err: any) {
+      console.error('Local export error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
