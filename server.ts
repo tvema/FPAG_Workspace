@@ -111,7 +111,7 @@ async function startServer() {
   });
 
   // Save or update file
-  app.post("/api/files", (req, res) => {
+  app.post("/api/files", async (req, res) => {
     try {
       const { id, name, path, type, content, project_id = 'default', is_link = 0 } = req.body;
       db.prepare(`
@@ -125,6 +125,21 @@ async function startServer() {
           project_id=excluded.project_id,
           is_link=excluded.is_link
       `).run(id, name, path, type, content, project_id, is_link);
+
+      // Sync to disk
+      if (!is_link) {
+        const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(project_id) as any;
+        if (project) {
+          const fs = await import('fs/promises');
+          const nodePath = await import('path');
+          const sanitize = (n: string) => n.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+          const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+          const fullPath = nodePath.resolve(exportDir, path);
+          await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+          await fs.writeFile(fullPath, content || '', 'utf8');
+        }
+      }
+
       res.json({ success: true, id });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -132,10 +147,24 @@ async function startServer() {
   });
 
   // Delete file
-  app.delete("/api/files/:id", (req, res) => {
+  app.delete("/api/files/:id", async (req, res) => {
     try {
+      const file = db.prepare("SELECT * FROM files WHERE id = ?").get(req.params.id) as any;
       db.prepare("DELETE FROM files WHERE id = ?").run(req.params.id);
       db.prepare("DELETE FROM messages WHERE file_id = ?").run(req.params.id);
+      
+      if (file && !file.is_link) {
+        const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(file.project_id) as any;
+        if (project) {
+          const fs = await import('fs/promises');
+          const nodePath = await import('path');
+          const sanitize = (n: string) => n.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+          const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+          const fullPath = nodePath.resolve(exportDir, file.path);
+          try { await fs.unlink(fullPath); } catch (e) {}
+        }
+      }
+      
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -381,6 +410,85 @@ async function startServer() {
       res.json({ success: true, path: exportDir });
     } catch (err: any) {
       console.error('Local export error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Git Actions
+  app.post('/api/git/action', async (req, res) => {
+    try {
+      const { projectId = 'default', action, path = '', commitMessage = '' } = req.body;
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
+      if (!project) throw new Error("Project not found");
+      
+      const nodePath = await import('path');
+      const fs = await import('fs/promises');
+      const { simpleGit } = await import('simple-git');
+      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+      
+      await fs.mkdir(exportDir, { recursive: true });
+      const git = simpleGit(exportDir);
+      
+      let result: any = { success: true };
+      
+      if (action === 'init') {
+        // First dump all files from DB to disk to ensure they exist
+        const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string, is_link: number }[];
+        for (const file of files) {
+          if (file.is_link) continue;
+          const fullPath = nodePath.resolve(exportDir, file.path);
+          await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+          await fs.writeFile(fullPath, file.content || '', 'utf8');
+        }
+        await git.init();
+      } else if (action === 'add') {
+        const isRepo = await git.checkIsRepo();
+        if (isRepo) await git.add(path);
+      } else if (action === 'rm') {
+        const isRepo = await git.checkIsRepo();
+        if (isRepo) {
+           try { await git.rm(path); } catch(e) {
+             // If not in index, just ignore or try to unstage
+             try { await git.reset(['--', path]); } catch(e2) {}
+           }
+        }
+      } else if (action === 'commit') {
+        const isRepo = await git.checkIsRepo();
+        if (isRepo) await git.commit(commitMessage || 'Workspace update');
+      }
+      
+      res.json(result);
+    } catch (err: any) {
+      console.error('Git action error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/git/status', async (req, res) => {
+    try {
+      const { projectId = 'default' } = req.query;
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId as string) as { id: string, name: string };
+      if (!project) throw new Error("Project not found");
+      
+      const nodePath = await import('path');
+      const fs = await import('fs/promises');
+      const { simpleGit } = await import('simple-git');
+      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+      
+      try { await fs.access(exportDir); } catch { await fs.mkdir(exportDir, { recursive: true }); }
+      const git = simpleGit(exportDir);
+      
+      const isRepo = await git.checkIsRepo();
+      if (!isRepo) {
+        return res.json({ isRepo: false, status: {} });
+      }
+      
+      const status = await git.status();
+      res.json({ isRepo: true, status });
+    } catch (err: any) {
+      console.error('Git status error:', err);
       res.status(500).json({ error: err.message });
     }
   });

@@ -1,13 +1,26 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, ChevronRight, ChevronDown, Folder, FolderOpen, MessageSquare, GitMerge, Pencil, Trash2, FilePlus, FolderPlus, Type, X, MoreVertical, Link, Github, Activity, FileText, Upload, Box, Hash } from 'lucide-react';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import debounce from 'lodash.debounce';
+
+// Hook for polling
+function useInterval(callback: () => void, delay: number | null) {
+  const savedCallback = useRef(callback);
+  useEffect(() => { savedCallback.current = callback; }, [callback]);
+  useEffect(() => {
+    if (delay !== null) {
+      const id = setInterval(() => savedCallback.current(), delay);
+      return () => clearInterval(id);
+    }
+  }, [delay]);
+}
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { OllamaChat } from './components/OllamaChat';
 import JSZip from 'jszip';
 import Editor from '@monaco-editor/react';
 import { PromptDialog } from './components/PromptDialog';
+import { GitCommitDialog } from './components/GitCommitDialog';
 import { GithubExportDialog } from './components/GithubExportDialog';
 import { DiffViewerModal } from './components/DiffViewerModal';
 import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
@@ -73,6 +86,24 @@ export default function App() {
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
   const [fileUIStates, setFileUIStates] = useState<Record<string, { isTextMode?: boolean, vcd?: WaveformViewerViewState }>>({});
+  const [gitStatus, setGitStatus] = useState<any>(null);
+  const [activeProject, setActiveProject] = useState<string | null>(null);
+
+  const fetchGitStatus = useCallback(async () => {
+     if (!activeProject) return;
+     try {
+       const res = await fetch(`/api/git/status?projectId=${activeProject}`);
+       if (res.ok) {
+         const data = await res.json();
+         setGitStatus(data);
+       }
+     } catch (e) {
+       console.error("Failed to fetch git status", e);
+     }
+  }, [activeProject]);
+
+  useInterval(fetchGitStatus, 3000);
+  useEffect(() => { fetchGitStatus(); }, [fetchGitStatus]);
   
   const updateFileUI = (fileId: string, updater: (prev: any) => any) => {
      setFileUIStates(prev => ({ ...prev, [fileId]: updater(prev[fileId] || {}) }));
@@ -83,7 +114,6 @@ export default function App() {
   const [proposedMergeCode, setProposedMergeCode] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<{id: string, name: string}[]>([]);
-  const [activeProject, setActiveProject] = useState<string | null>(null);
 
   const [editorTheme, setEditorTheme] = useState<string>('vs-dark');
   const [showMinimap, setShowMinimap] = useState<boolean>(false);
@@ -152,6 +182,8 @@ export default function App() {
     error: string | null;
   }>({ isOpen: false, logs: [], error: null });
   const [isBuildingLocal, setIsBuildingLocal] = useState(false);
+
+  const [gitCommitDialogState, setGitCommitDialogState] = useState(false);
 
   const customPrompt = (title: string, defaultValue: string = ''): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -753,6 +785,15 @@ export default function App() {
         // Base indent for non-folders. if inside a file, depth increases
         const pl = depth * 16 + (isFile ? 20 : 20);
 
+        const isModified = gitStatus?.status?.modified?.includes(node.path);
+        const isUntracked = gitStatus?.status?.not_added?.includes(node.path);
+        const isAdded = gitStatus?.status?.created?.includes(node.path) || gitStatus?.status?.staged?.includes(node.path);
+
+        let gitMarker = null;
+        if (isUntracked) gitMarker = <span className="text-[10px] text-emerald-500 font-bold ml-1" title="Untracked">U</span>;
+        else if (isAdded) gitMarker = <span className="text-[10px] text-emerald-400 font-bold ml-1" title="Added">A</span>;
+        else if (isModified) gitMarker = <span className="text-[10px] text-amber-500 font-bold ml-1" title="Modified">M</span>;
+
         return (
           <div key={node.path}>
             <div 
@@ -786,6 +827,7 @@ export default function App() {
                     <Hash className="w-3.5 h-3.5 shrink-0 text-slate-500" />
                  )}
                  <span className={`truncate ${isModule ? 'text-indigo-300' : ''}`}>{node.name}</span>
+                 {gitMarker}
                </div>
                
                <DropdownMenu.Root>
@@ -808,6 +850,21 @@ export default function App() {
                         <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleDeleteFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 cursor-pointer outline-none flex items-center gap-2">
                             <Trash2 className="w-3 h-3" /> Delete
                         </DropdownMenu.Item>
+                        )}
+                        {gitStatus?.isRepo && isFile && (
+                           <>
+                             <DropdownMenu.Separator className="h-px bg-white/5 my-1" />
+                             {(isUntracked || isModified) && (
+                               <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleGitAction('add', node.path); }} className="px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 cursor-pointer outline-none flex items-center gap-2">
+                                   <FilePlus className="w-3 h-3" /> Git Add
+                               </DropdownMenu.Item>
+                             )}
+                             {!isUntracked && (
+                               <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleGitAction('rm', node.path); }} className="px-3 py-1.5 text-xs text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 cursor-pointer outline-none flex items-center gap-2">
+                                   <Trash2 className="w-3 h-3" /> Git Rm/Restore
+                               </DropdownMenu.Item>
+                             )}
+                           </>
                         )}
                      </DropdownMenu.Content>
                   </DropdownMenu.Portal>
@@ -918,6 +975,24 @@ int main(int argc, char** argv) {
       // 3. Create a link to the output VCD file
       const vcdPath = tbFolder + tbName + '.vcd';
       await handleAddFile(vcdPath, 'Waiting for generated VCD file after Make...', activeProject || undefined, true);
+  };
+
+  const handleGitAction = async (action: 'init' | 'add' | 'rm' | 'commit', path?: string, commitMessage?: string) => {
+    try {
+      const res = await fetch('/api/git/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: activeProject, action, path, commitMessage })
+      });
+      if (res.ok) {
+         fetchGitStatus();
+      } else {
+         const data = await res.json();
+         alert(data.error || 'Git action failed');
+      }
+    } catch(e) {
+      console.error(e);
+    }
   };
 
   const handleFileUploadMenu = (targetPath: string) => {
@@ -1118,14 +1193,34 @@ int main(int argc, char** argv) {
             <Download className="w-3.5 h-3.5" />
             {isExporting ? 'Exporting...' : 'Export to ZIP'}
           </button>
-          <button 
-            onClick={handleExportLocalGit}
-            disabled={isExportingGist}
-            className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Github className="w-3.5 h-3.5" />
-            {isExportingGist ? 'Exporting...' : 'Export to Local Git'}
-          </button>
+          {!gitStatus?.isRepo ? (
+            <button 
+              onClick={() => handleGitAction('init')}
+              className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              <Github className="w-3.5 h-3.5" />
+              Init Git Repo
+            </button>
+          ) : (
+            <>
+              <button 
+                onClick={() => handleGitAction('add', '.')}
+                className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <FilePlus className="w-3.5 h-3.5" />
+                Git Add All
+              </button>
+              <button 
+                onClick={() => {
+                  setGitCommitDialogState(true);
+                }}
+                className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <GitMerge className="w-3.5 h-3.5" />
+                Git Commit
+              </button>
+            </>
+          )}
           
           <button 
             onClick={handleRunMake}
@@ -1420,6 +1515,14 @@ int main(int argc, char** argv) {
         onCreate={handleCreateTestbench}
       />
       
+      <GitCommitDialog
+        isOpen={gitCommitDialogState}
+        gitStatus={gitStatus}
+        onClose={() => setGitCommitDialogState(false)}
+        onCommit={(message) => {
+          handleGitAction('commit', undefined, message);
+        }}
+      />
       <PromptDialog 
         isOpen={promptDialog.isOpen}
         title={promptDialog.title}
