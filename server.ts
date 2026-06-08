@@ -455,7 +455,11 @@ async function startServer() {
         }
       } else if (action === 'commit') {
         const isRepo = await git.checkIsRepo();
-        if (isRepo) await git.commit(commitMessage || 'Workspace update');
+        if (isRepo) {
+          await git.addConfig('user.name', 'Workspace User');
+          await git.addConfig('user.email', 'workspace@example.com');
+          await git.commit(commitMessage || 'Workspace update');
+        }
       }
       
       res.json(result);
