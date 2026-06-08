@@ -1133,7 +1133,6 @@ export default function App() {
               <Editor
                 height="100%"
                 theme={editorTheme}
-                options={{ minimap: { enabled: showMinimap } }}
                 onMount={handleEditorDidMount}
                 language={
                   ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :
@@ -1179,7 +1178,7 @@ export default function App() {
                     if (activeProject) saveFileToAPI(activeFile, { ...filesData[activeFile], content }, activeProject);
                   }
                 }}
-                options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false, wordWrap: 'on' }}
+                options={{ minimap: { enabled: showMinimap }, fontSize: 13, scrollBeyondLastLine: false, wordWrap: 'on' }}
               />
               )
             ) : (
