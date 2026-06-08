@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, Bot, User, Settings, Loader2, AlertCircle, Save, GitMerge } from 'lucide-react';
+import { parseVerilog } from '../utils/verilogParser';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -184,9 +185,31 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
     
     if (referencedPaths.length > 0 && allFiles) {
       promptPrefix += `[Referenced Files Context:]\n`;
-      Object.values(allFiles).forEach((f: any) => {
-        if (referencedPaths.includes(f.path) || referencedPaths.includes(f.name)) {
-          promptPrefix += `\n--- START OF REFERENCED FILE: ${f.path} ---\n\`\`\`\n${f.content}\n\`\`\`\n--- END OF REFERENCED FILE ---\n`;
+      referencedPaths.forEach((refPath) => {
+        const [filePath, moduleName, signalName] = refPath.split(':');
+        const theFile = Object.values(allFiles).find((f: any) => f.path === filePath || f.name === filePath);
+        
+        if (theFile) {
+           if (!moduleName) {
+               promptPrefix += `\n--- START OF REFERENCED FILE: ${theFile.path} ---\n\`\`\`\n${theFile.content}\n\`\`\`\n--- END OF REFERENCED FILE ---\n`;
+           } else {
+               if (theFile.path.endsWith('.v') || theFile.path.endsWith('.sv')) {
+                   try {
+                       const modules = parseVerilog(theFile.content);
+                       const mod = modules.find(m => m.name === moduleName);
+                       if (mod) {
+                           if (!signalName) {
+                               promptPrefix += `\n--- START OF REFERENCED MODULE HEADER: ${theFile.path}:${mod.name} ---\n\`\`\`verilog\n${mod.header}\n\`\`\`\n--- END OF REFERENCED MODULE HEADER ---\n`;
+                           } else {
+                               const sig = mod.signals.find(s => s.name === signalName);
+                               if (sig) {
+                                   promptPrefix += `\n--- START OF REFERENCED SIGNAL: ${theFile.path}:${mod.name}:${sig.name} ---\n\`\`\`verilog\n${sig.declaration}\n\`\`\`\n--- END OF REFERENCED SIGNAL ---\n`;
+                               }
+                           }
+                       }
+                   } catch (e) {}
+               }
+           }
         }
       });
       promptPrefix += `\n`;

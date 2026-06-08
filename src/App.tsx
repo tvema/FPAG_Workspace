@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, ChevronRight, ChevronDown, Folder, FolderOpen, MessageSquare, GitMerge, Pencil, Trash2, FilePlus, FolderPlus, Type, X, MoreVertical, Link, Github, Activity, FileText, Upload } from 'lucide-react';
+import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, ChevronRight, ChevronDown, Folder, FolderOpen, MessageSquare, GitMerge, Pencil, Trash2, FilePlus, FolderPlus, Type, X, MoreVertical, Link, Github, Activity, FileText, Upload, Box, Hash } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import debounce from 'lodash.debounce';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -11,6 +11,7 @@ import { GithubExportDialog } from './components/GithubExportDialog';
 import { DiffViewerModal } from './components/DiffViewerModal';
 import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
 import { parseVCD } from './utils/vcdParser';
+import { parseVerilog } from './utils/verilogParser';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -83,6 +84,9 @@ export default function App() {
   const [activeProject, setActiveProject] = useState<string | null>(null);
 
   const [editorTheme, setEditorTheme] = useState<string>('vs-dark');
+  const [showMinimap, setShowMinimap] = useState<boolean>(false);
+  const [lineJumpTarget, setLineJumpTarget] = useState<string | null>(null);
+  const editorRef = React.useRef<any>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingGist, setIsExportingGist] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
@@ -170,6 +174,27 @@ export default function App() {
       });
     });
   };
+
+  useEffect(() => {
+    if (lineJumpTarget && editorRef.current) {
+         setTimeout(() => { // wait for editor to apply model if active file just changed
+             const model = editorRef.current.getModel();
+             if (!model) return;
+             const searchString = lineJumpTarget.split('\n')[0].trim();
+             const matches = model.findMatches(searchString, false, false, false, null, true);
+             if (matches && matches.length > 0) {
+                 editorRef.current.revealLineInCenter(matches[0].range.startLineNumber);
+                 editorRef.current.setPosition({ lineNumber: matches[0].range.startLineNumber, column: 1 });
+                 editorRef.current.focus();
+                 setLineJumpTarget(null);
+             }
+         }, 150);
+    }
+  }, [activeFile, lineJumpTarget]);
+
+  const handleEditorDidMount = React.useCallback((editor: any) => {
+    editorRef.current = editor;
+  }, []);
 
   const handleConnectGitHub = async () => {
     try {
@@ -579,8 +604,9 @@ export default function App() {
   type TreeNode = {
     name: string;
     path: string;
-    type: 'file' | 'folder';
+    type: 'file' | 'folder' | 'module' | 'wire_reg';
     fileId?: string;
+    content?: string;
     children: Record<string, TreeNode>;
   };
   
@@ -594,7 +620,42 @@ export default function App() {
           const currentPath = parts.slice(0, i + 1).join('/');
           
           if (isFile) {
-             currentLevel[part] = { name: part, path: currentPath, type: 'file', fileId: f.id, children: {} };
+             const fileNode: TreeNode = { name: part, path: currentPath, type: 'file', fileId: f.id, children: {} };
+             currentLevel[part] = fileNode;
+             
+             // If it's a Verilog file, parse and add module nodes
+             if (part.endsWith('.v') || part.endsWith('.sv')) {
+                try {
+                    const modules = parseVerilog(f.content);
+                    modules.forEach(mod => {
+                        const modName = mod.name;
+                        const modPath = `${currentPath}:${modName}`;
+                        const modNode: TreeNode = { 
+                            name: modName, 
+                            path: modPath, 
+                            type: 'module', 
+                            content: mod.header,
+                            fileId: f.id,
+                            children: {} 
+                        };
+                        
+                        mod.signals.forEach(sig => {
+                            modNode.children[sig.name] = {
+                                name: sig.name,
+                                path: `${modPath}:${sig.name}`,
+                                type: 'wire_reg',
+                                content: sig.declaration,
+                                fileId: f.id,
+                                children: {}
+                            };
+                        });
+                        
+                        fileNode.children[modName] = modNode;
+                    });
+                } catch (e) {
+                    console.error("Failed to parse Verilog file for modules:", f.path);
+                }
+             }
           } else {
              if (!currentLevel[part]) {
                 currentLevel[part] = { name: part, path: currentPath, type: 'folder', children: {} };
@@ -607,20 +668,23 @@ export default function App() {
   const renderTree = (nodes: Record<string, TreeNode>, depth: number = 0) => {
     return Object.values(nodes)
       .sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+        // Folders first, then files, then modules, then wires
+        const getWeight = (t: string) => t === 'folder' ? 0 : t === 'file' ? 1 : t === 'module' ? 2 : 3;
+        if (getWeight(a.type) !== getWeight(b.type)) return getWeight(a.type) - getWeight(b.type);
         return a.name.localeCompare(b.name);
       })
       .map(node => {
+        const hasChildren = Object.keys(node.children).length > 0;
+        const isCollapsed = collapsedDirs[node.path] ?? (node.type !== 'folder');
+
         if (node.type === 'folder') {
-          const isCollapsed = collapsedDirs[node.path];
           return (
             <div key={node.path}>
               <div 
                 className={`flex items-center justify-between text-sm text-slate-200 py-1.5 font-medium group pr-2 cursor-pointer hover:bg-white/5 rounded`}
                 style={{ paddingLeft: `${depth * 16}px` }}
-                onClick={() => setCollapsedDirs(prev => ({ ...prev, [node.path]: !prev[node.path] }))}
               >
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5" onClick={() => setCollapsedDirs(prev => ({ ...prev, [node.path]: !isCollapsed }))}>
                   {isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   <FolderOpen className="w-4 h-4 text-amber-400" />
                   <span>{node.name}</span>
@@ -680,42 +744,76 @@ export default function App() {
           );
         }
 
+        const isFile = node.type === 'file';
+        const isModule = node.type === 'module';
+        // Base indent for non-folders. if inside a file, depth increases
+        const pl = depth * 16 + (isFile ? 20 : 20);
+
         return (
-          <div 
-            key={node.path}
-            onClick={() => { if (node.fileId) { setActiveFile(node.fileId); setOpenedTabs(p => p.includes(node.fileId!) ? p : [...p, node.fileId!]); } }}
-            className={`group py-1 pr-1 flex items-center justify-between cursor-pointer transition-colors ${activeFile === node.fileId ? 'text-emerald-400 bg-emerald-500/10 rounded' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 rounded'}`}
-            style={{ paddingLeft: `${depth * 16 + 20}px` }}
-          >
-             <div className="flex items-center gap-2 text-[13px] overflow-hidden min-w-0">
-               <FileCode2 className="w-3.5 h-3.5 shrink-0" />
-               <span className="truncate">{node.name}</span>
-             </div>
-             
-             <DropdownMenu.Root>
-                <DropdownMenu.Trigger asChild>
-                   <button onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded p-1">
-                      <MoreVertical className="w-3.5 h-3.5" />
-                   </button>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Portal>
-                   <DropdownMenu.Content align="end" sideOffset={2} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[120px] z-50">
-                      <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); setChatInput((prev) => prev + (prev.endsWith(' ') || prev === '' ? '' : ' ') + `{${node.path}}`); setIsChatOpen(true); }} className="px-3 py-1.5 text-xs text-indigo-300 hover:bg-indigo-500/10 hover:text-indigo-200 cursor-pointer outline-none flex items-center gap-2">
-                          <Link className="w-3 h-3" /> Reference
-                      </DropdownMenu.Item>
-                      {node.fileId && (
-                      <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleRenameFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2">
-                          <Type className="w-3 h-3" /> Rename
-                      </DropdownMenu.Item>
-                      )}
-                      {node.fileId && (
-                      <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleDeleteFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 cursor-pointer outline-none flex items-center gap-2">
-                          <Trash2 className="w-3 h-3" /> Delete
-                      </DropdownMenu.Item>
-                      )}
-                   </DropdownMenu.Content>
-                </DropdownMenu.Portal>
-             </DropdownMenu.Root>
+          <div key={node.path}>
+            <div 
+              onClick={() => { 
+                 if (node.fileId) {
+                    setActiveFile(node.fileId); 
+                    setOpenedTabs(p => p.includes(node.fileId!) ? p : [...p, node.fileId!]);
+                    
+                    if (isModule || node.type === 'wire_reg') {
+                       setLineJumpTarget(node.content || null);
+                    }
+                 }
+              }}
+              className={`group py-1 pr-1 flex items-center justify-between cursor-pointer transition-colors ${isFile && activeFile === node.fileId ? 'text-emerald-400 bg-emerald-500/10 rounded' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 rounded'}`}
+              style={{ paddingLeft: `${pl}px` }}
+            >
+               <div className="flex items-center gap-1.5 text-[13px] overflow-hidden min-w-0">
+                 {hasChildren && (
+                    <div className="shrink-0" onClick={(e) => { e.stopPropagation(); setCollapsedDirs(prev => ({ ...prev, [node.path]: !isCollapsed })); }}>
+                       {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
+                    </div>
+                 )}
+                 {!hasChildren && (
+                    <div className="w-3.5" />
+                 )}
+                 {isFile ? (
+                    <FileCode2 className="w-3.5 h-3.5 shrink-0" />
+                 ) : isModule ? (
+                    <Box className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+                 ) : (
+                    <Hash className="w-3.5 h-3.5 shrink-0 text-slate-500" />
+                 )}
+                 <span className={`truncate ${isModule ? 'text-indigo-300' : ''}`}>{node.name}</span>
+               </div>
+               
+               <DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                     <button onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded p-1">
+                        <MoreVertical className="w-3.5 h-3.5" />
+                     </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                     <DropdownMenu.Content align="end" sideOffset={2} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[120px] z-50">
+                        <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); setChatInput((prev) => prev + (prev.endsWith(' ') || prev === '' ? '' : ' ') + `{${node.path}}`); setIsChatOpen(true); }} className="px-3 py-1.5 text-xs text-indigo-300 hover:bg-indigo-500/10 hover:text-indigo-200 cursor-pointer outline-none flex items-center gap-2">
+                            <Link className="w-3 h-3" /> Reference
+                        </DropdownMenu.Item>
+                        {node.fileId && (
+                        <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleRenameFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2">
+                            <Type className="w-3 h-3" /> Rename
+                        </DropdownMenu.Item>
+                        )}
+                        {node.fileId && (
+                        <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleDeleteFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 cursor-pointer outline-none flex items-center gap-2">
+                            <Trash2 className="w-3 h-3" /> Delete
+                        </DropdownMenu.Item>
+                        )}
+                     </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+               </DropdownMenu.Root>
+            </div>
+            {hasChildren && !isCollapsed && (
+               <div className="flex flex-col">
+                 {renderTree(node.children, depth + 1)}
+               </div>
+            )}
           </div>
         );
       });
@@ -973,6 +1071,11 @@ export default function App() {
                 <DropdownMenu.Item onClick={() => setEditorTheme('hc-black')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'hc-black' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
                   hc-black
                 </DropdownMenu.Item>
+                <DropdownMenu.Separator className="h-px bg-white/10 my-1" />
+                <DropdownMenu.Item onClick={() => setShowMinimap(p => !p)} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center justify-between text-slate-300 hover:bg-white/5 hover:text-white">
+                  <span>Show Minimap</span>
+                  {showMinimap && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
@@ -1030,6 +1133,8 @@ export default function App() {
               <Editor
                 height="100%"
                 theme={editorTheme}
+                options={{ minimap: { enabled: showMinimap } }}
+                onMount={handleEditorDidMount}
                 language={
                   ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :
                   ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'tcl' :
