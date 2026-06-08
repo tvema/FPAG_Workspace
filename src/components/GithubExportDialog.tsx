@@ -6,10 +6,11 @@ interface GithubExportDialogProps {
   logs: string[];
   finalUrl: string | null;
   error: string | null;
+  isProcessing: boolean;
   onClose: () => void;
 }
 
-export function GithubExportDialog({ isOpen, logs, finalUrl, error, onClose }: GithubExportDialogProps) {
+export function GithubExportDialog({ isOpen, logs, finalUrl, error, isProcessing, onClose }: GithubExportDialogProps) {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -75,7 +76,7 @@ export function GithubExportDialog({ isOpen, logs, finalUrl, error, onClose }: G
                   <Link className="w-3.5 h-3.5" />
                   Open in GitHub
                 </a>
-              ) : error ? null : (
+              ) : error ? null : isProcessing ? (
                 <button 
                   disabled
                   className="px-4 py-2 text-xs font-semibold bg-slate-800 text-slate-400 rounded flex items-center gap-2 cursor-not-allowed"
@@ -86,7 +87,7 @@ export function GithubExportDialog({ isOpen, logs, finalUrl, error, onClose }: G
                   </svg>
                   Processing...
                 </button>
-              )}
+              ) : null}
             </div>
           </motion.div>
         </motion.div>

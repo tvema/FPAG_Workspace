@@ -1200,6 +1200,7 @@ export default function App() {
         logs={gistExportDialog.logs}
         finalUrl={gistExportDialog.finalUrl}
         error={gistExportDialog.error}
+        isProcessing={isExportingGist}
         onClose={() => setGistExportDialog(prev => ({...prev, isOpen: false}))}
       />
     </div>
