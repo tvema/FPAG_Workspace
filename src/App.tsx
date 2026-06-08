@@ -589,6 +589,7 @@ export default function App() {
     fileId?: string;
     content?: string;
     children: Record<string, TreeNode>;
+    is_link?: boolean;
   };
   
   const treeRoot: Record<string, TreeNode> = {};
@@ -601,7 +602,7 @@ export default function App() {
           const currentPath = parts.slice(0, i + 1).join('/');
           
           if (isFile) {
-             const fileNode: TreeNode = { name: part, path: currentPath, type: 'file', fileId: f.id, children: {} };
+             const fileNode: TreeNode = { name: part, path: currentPath, type: 'file', fileId: f.id, is_link: f.is_link, children: {} };
              currentLevel[part] = fileNode;
              
              // If it's a Verilog file, parse and add module nodes
@@ -713,6 +714,17 @@ export default function App() {
                          >
                              <Upload className="w-3 h-3" /> Upload File(s)
                          </DropdownMenu.Item>
+                         <DropdownMenu.Item 
+                           onClick={(e) => { 
+                              e.stopPropagation(); 
+                              customPrompt(`Enter link file name (in ${node.path}/):`, 'output.vcd').then(name => {
+                                if (name) handleAddFile(`${node.path}/${name}`, "Waiting for output...", activeProject || undefined, true);
+                              });
+                           }} 
+                           className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
+                         >
+                             <Link className="w-3 h-3" /> Add Link to File
+                         </DropdownMenu.Item>
                          <DropdownMenu.Separator className="h-px bg-white/5 my-1" />
                          <DropdownMenu.Item 
                            onClick={(e) => { 
@@ -767,7 +779,7 @@ export default function App() {
                     <div className="w-3.5" />
                  )}
                  {isFile ? (
-                    <FileCode2 className="w-3.5 h-3.5 shrink-0" />
+                    node.is_link ? <Link className="w-3.5 h-3.5 shrink-0 text-emerald-400" /> : <FileCode2 className="w-3.5 h-3.5 shrink-0" />
                  ) : isModule ? (
                     <Box className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
                  ) : (
@@ -1374,6 +1386,12 @@ int main(int argc, char** argv) {
                    <button onClick={() => {
                        setTestbenchDialog({ isOpen: true, parentPath: '', filesToInclude: [], tbName: 'tb_module' });
                    }} className="text-slate-400 hover:text-white" title="Create Testbench"><Box className="w-4 h-4" /></button>
+                   <button onClick={async () => {
+                       const name = await customPrompt("Enter linked file name in root:", "output.vcd");
+                       if (name) {
+                           handleAddFile(name, "Waiting for output...", activeProject || undefined, true);
+                       }
+                   }} className="text-slate-400 hover:text-white" title="Add Link to File"><Link className="w-4 h-4" /></button>
                    <button onClick={() => {
                        handleFileUploadMenu('');
                    }} className="text-slate-400 hover:text-white" title="Upload File"><Upload className="w-4 h-4" /></button>
