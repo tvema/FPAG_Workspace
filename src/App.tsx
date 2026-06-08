@@ -836,13 +836,15 @@ export default function App() {
       }
   };
 
-  const handleCreateTestbench = async (tbName: string, filesToInclude: string[]) => {
+  const handleCreateTestbench = async (tbName: string, filesToInclude: string[], makefileTemplate: string, tbExt: string) => {
       const parent = testbenchDialog.parentPath;
       const tbFolder = parent + tbName + '/';
 
-      // 1. Generate tb_module.v
-      const tbPath = tbFolder + tbName + '.v';
-      const tbContent = `\`timescale 1ns / 1ps
+      // 1. Generate testbench file
+      const tbPath = tbFolder + tbName + tbExt;
+      let tbContent = '';
+      if (tbExt === '.v') {
+         tbContent = `\`timescale 1ns / 1ps
 
 module ${tbName};
 
@@ -861,46 +863,44 @@ module ${tbName};
 
 endmodule
 `;
+      } else {
+         tbContent = `#include <iostream>
+#include <verilated.h>
+// Include your verilated model header here:
+// #include "V${tbName}.h"
+
+int main(int argc, char** argv) {
+    Verilated::commandArgs(argc, argv);
+    // V${tbName}* top = new V${tbName};
+    
+    // while (!Verilated::gotFinish()) {
+    //     top->eval();
+    // }
+    
+    // delete top;
+    std::cout << "Testbench completed." << std::endl;
+    return 0;
+}
+`;
+      }
       await handleAddFile(tbPath, tbContent, activeProject || undefined);
 
       // 2. Generate Makefile
       const makefilePath = tbFolder + 'Makefile';
       
-      // Calculate relative paths for included files
-      // Assuming flat hierarchy for now, or prefixing with ../ as needed.
-      // Easiest is to prefix with `../` since tbFolder is one level deeper than parent.
       const mappedFiles = filesToInclude.map(f => {
           if (f.startsWith(parent)) {
               return '../' + f.slice(parent.length);
           }
-          // If elsewhere, we could compute full relative, but let's do a simple fix
-          // by just using a relative path to workspace root
           const depth = tbFolder.split('/').filter(Boolean).length;
           const up = '../'.repeat(depth);
           return up + f;
       });
 
-      const makefileContent = `VERILATOR=verilator
-IVERILOG=iverilog
-VVP=vvp
+      const makefileContent = makefileTemplate
+          .replace(/\{\{tbName\}\}/g, tbName)
+          .replace(/\{\{files\}\}/g, mappedFiles.join(' '));
 
-# Target executable
-TARGET = ${tbName}.vvp
-
-# Source files
-SOURCES = ${mappedFiles.join(' ')} ${tbName}.v
-
-all: run
-
-build:
-\t$(IVERILOG) -o $(TARGET) $(SOURCES)
-
-run: build
-\t$(VVP) $(TARGET)
-
-clean:
-\trm -f $(TARGET) *.vcd
-`;
       await handleAddFile(makefilePath, makefileContent, activeProject || undefined);
 
       // 3. Create a link to the output VCD file
