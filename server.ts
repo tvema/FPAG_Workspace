@@ -81,9 +81,31 @@ async function startServer() {
     }
   });
 
-  app.get("/api/projects/:projectId/files", (req, res) => {
+  app.get("/api/projects/:projectId/files", async (req, res) => {
     try {
-      const rows = db.prepare("SELECT * FROM files WHERE project_id = ?").all(req.params.projectId);
+      const rows = db.prepare("SELECT * FROM files WHERE project_id = ?").all(req.params.projectId) as any[];
+      
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.projectId) as { id: string, name: string };
+      if (!project) return res.json(rows);
+      
+      const fs = await import('fs/promises');
+      const nodePath = await import('path');
+      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+
+      for (const row of rows) {
+        if (row.is_link) {
+          try {
+            const fullPath = nodePath.resolve(exportDir, row.path);
+            if (fullPath.startsWith(exportDir)) {
+              row.content = await fs.readFile(fullPath, 'utf8');
+            }
+          } catch (e) {
+            // retain default DB placeholder if reading fails
+          }
+        }
+      }
+
       res.json(rows);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -396,7 +418,13 @@ async function startServer() {
       // Git commit
       const git = simpleGit(exportDir);
       
-      const isRepo = await git.checkIsRepo();
+      let isRepo = false;
+      try {
+        await fs.access(nodePath.join(exportDir, '.git'));
+        isRepo = true;
+      } catch {
+        isRepo = false;
+      }
       if (!isRepo) {
         await git.init();
       }
@@ -463,7 +491,14 @@ async function startServer() {
         if (isRepo) {
           await git.addConfig('user.name', 'Workspace User');
           await git.addConfig('user.email', 'workspace@example.com');
-          await git.commit(commitMessage || 'Workspace update');
+          let commitOutput = '';
+          try {
+             commitOutput = await git.raw(['commit', '-m', commitMessage || 'Workspace update']);
+          } catch(e: any) {
+             commitOutput = e.message;
+             result.success = false;
+          }
+          result.commitResult = commitOutput;
         }
       }
       
@@ -517,7 +552,7 @@ async function startServer() {
       const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
       if (!project) throw new Error("Project not found");
 
-      const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string }[];
+      const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string, is_link?: number }[];
       
       const fs = await import('fs/promises');
       const nodePath = await import('path');
@@ -533,6 +568,7 @@ async function startServer() {
       
       // Write files
       for (const file of files) {
+        if (file.is_link) continue;
         if (file.path.endsWith('.gitkeep')) continue;
         const fullPath = nodePath.resolve(exportDir, file.path);
         await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });

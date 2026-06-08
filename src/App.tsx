@@ -21,6 +21,7 @@ import JSZip from 'jszip';
 import Editor from '@monaco-editor/react';
 import { PromptDialog } from './components/PromptDialog';
 import { GitCommitDialog } from './components/GitCommitDialog';
+import { MessageOverlay } from './components/MessageOverlay';
 import { GithubExportDialog } from './components/GithubExportDialog';
 import { DiffViewerModal } from './components/DiffViewerModal';
 import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
@@ -184,6 +185,8 @@ export default function App() {
   const [isBuildingLocal, setIsBuildingLocal] = useState(false);
 
   const [gitCommitDialogState, setGitCommitDialogState] = useState(false);
+  const [gitMessageOpen, setGitMessageOpen] = useState(false);
+  const [gitMessageContent, setGitMessageContent] = useState<any>(null);
 
   const customPrompt = (title: string, defaultValue: string = ''): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -986,9 +989,15 @@ int main(int argc, char** argv) {
       });
       if (res.ok) {
          fetchGitStatus();
+         const data = await res.json();
+         if (action === 'commit' && data.commitResult) {
+            setGitMessageContent(data.commitResult);
+            setGitMessageOpen(true);
+         }
       } else {
          const data = await res.json();
-         alert(data.error || 'Git action failed');
+         setGitMessageContent(`Error: ${data.error}`);
+         setGitMessageOpen(true);
       }
     } catch(e) {
       console.error(e);
@@ -1522,6 +1531,13 @@ int main(int argc, char** argv) {
         onCommit={(message) => {
           handleGitAction('commit', undefined, message);
         }}
+      />
+      <MessageOverlay 
+        isOpen={gitMessageOpen}
+        title="Git Output"
+        message={gitMessageContent || ''}
+        type={gitMessageContent?.toString().startsWith('Error') ? 'error' : 'success'}
+        onClose={() => setGitMessageOpen(false)}
       />
       <PromptDialog 
         isOpen={promptDialog.isOpen}
