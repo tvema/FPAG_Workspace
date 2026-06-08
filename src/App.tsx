@@ -3,12 +3,12 @@ import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, Chev
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import debounce from 'lodash.debounce';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { OllamaChat } from './components/OllamaChat';
 import JSZip from 'jszip';
 import Editor from '@monaco-editor/react';
 import { PromptDialog } from './components/PromptDialog';
 import { GithubExportDialog } from './components/GithubExportDialog';
-import { BuildDialog } from './components/BuildDialog';
 import { DiffViewerModal } from './components/DiffViewerModal';
 import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
 import { parseVCD } from './utils/vcdParser';
@@ -1013,27 +1013,33 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Ollama Chat Left Panel */}
-        {isChatOpen && (
-          <div className="w-1/3 min-w-[350px] max-w-[450px] border-r border-white/10 flex flex-col z-20 bg-[#16161a] shrink-0">
-            <OllamaChat 
-               onAddFile={handleAddFile} 
-               activeFileId={activeFile} 
-               activeFilePath={filesData[activeFile]?.path || null} 
-               activeFileContent={filesData[activeFile]?.content || null} 
-               projectContext={Object.values(filesData).find((f: any) => f.path === 'ai_context.md' || f.name === 'ai_context.md')?.content || null}
-               onProposeMerge={setProposedMergeCode}
-               input={chatInput}
-               setInput={setChatInput}
-               allFiles={filesData}
-            />
-          </div>
-        )}
+      <div className="flex-1 w-full overflow-hidden">
+        <PanelGroup orientation="horizontal" autoSaveId="workspace-horizontal-v5">
+          {/* Ollama Chat Left Panel */}
+          {isChatOpen && (
+            <>
+              <Panel id="chat" order={1} defaultSize={25} minSize={15} className="flex flex-col z-20 bg-[#16161a]">
+                <OllamaChat 
+                   onAddFile={handleAddFile} 
+                   activeFileId={activeFile} 
+                   activeFilePath={filesData[activeFile]?.path || null} 
+                   activeFileContent={filesData[activeFile]?.content || null} 
+                   projectContext={Object.values(filesData).find((f: any) => f.path === 'ai_context.md' || f.name === 'ai_context.md')?.content || null}
+                   onProposeMerge={setProposedMergeCode}
+                   input={chatInput}
+                   setInput={setChatInput}
+                   allFiles={filesData}
+                />
+              </Panel>
+              <PanelResizeHandle className="w-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-col-resize z-50 relative" />
+            </>
+          )}
 
-        {/* Editor Area (Middle) */}
-        <div className="flex-1 flex flex-col bg-[#1e1e1e] min-w-0">
-          <div className="flex bg-[#121214] border-b border-black/50 overflow-x-auto no-scrollbar shrink-0">
+          {/* Editor Area (Middle) */}
+          <Panel id="editor" order={2} defaultSize={isChatOpen ? 55 : 80} minSize={30} className="flex flex-col min-w-0 bg-[#1e1e1e]">
+            <PanelGroup orientation="vertical" autoSaveId="workspace-vertical-v5">
+              <Panel id="editor-main" order={1} defaultSize={buildDialog.isOpen ? 70 : 100} className="flex flex-col relative min-h-0">
+                <div className="flex bg-[#121214] border-b border-black/50 overflow-x-auto no-scrollbar shrink-0">
             {openedTabs.map(id => (
               <div 
                 key={id} 
@@ -1115,37 +1121,126 @@ export default function App() {
               <div className="flex items-center justify-center h-full text-slate-600 text-sm">Select a file to edit</div>
             )}
           </div>
-        </div>
+        </Panel>
 
-        {/* Sidebar Project Tree (Right) */}
-        <div className="w-64 bg-[#121214] border-l border-white/10 flex flex-col z-10 hidden lg:flex shrink-0">
-          <div className="p-4 overflow-y-auto w-full">
-             <div className="flex items-center justify-between mb-3 w-full">
-               <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Project</h2>
-               <div className="flex items-center gap-2">
-                 <button onClick={async () => {
-                     const name = await customPrompt("Enter new folder name in root:");
-                     if (name) {
-                         const folderPath = name.endsWith('/') ? name : name + '/';
-                         handleAddFile(folderPath + '.gitkeep', "");
-                     }
-                 }} className="text-slate-400 hover:text-white" title="New Folder"><FolderPlus className="w-4 h-4" /></button>
-                 <button onClick={async () => {
-                     const name = await customPrompt("Enter new file name in root:", "new_file.v");
-                     if (name) {
-                         handleAddFile(name, "// New file\n");
-                     }
-                 }} className="text-slate-400 hover:text-white" title="New File"><FilePlus className="w-4 h-4" /></button>
-                 <button onClick={() => {
-                     handleFileUploadMenu('');
-                 }} className="text-slate-400 hover:text-white" title="Upload File"><Upload className="w-4 h-4" /></button>
+          {buildDialog.isOpen && (
+            <>
+              <PanelResizeHandle className="h-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-row-resize z-50 relative" />
+              <Panel id="build-output" order={2} defaultSize={30} minSize={10} className="bg-[#0a0a0c] flex flex-col border-t border-white/10 relative">
+                 <div className="flex items-center justify-between p-2 pt-1 border-b border-white/5 bg-[#121214] shrink-0">
+                   <div className="text-xs font-semibold text-slate-400 flex items-center gap-2">
+                     <Terminal className="w-3.5 h-3.5" /> Make Output
+                   </div>
+                   <button onClick={() => setBuildDialog(p => ({...p, isOpen: false}))} className="text-slate-500 hover:text-white p-1 outline-none">
+                     <X className="w-3.5 h-3.5" />
+                   </button>
+                 </div>
+                  <div className="p-3 overflow-y-auto font-mono text-[12px] text-slate-300 leading-relaxed whitespace-pre flex-1">
+                  {buildDialog.logs.map((log, i) => {
+                    // Match: file.v:10: message OR file.v(10) message OR %Error: file.v:10: message
+                    const errorMatch = log.match(/([a-zA-Z0-9_.\-\/\\]+\.[a-zA-Z0-9]+)(?::|\()(\d+)(?::|\))?\s*(.+)/);
+                    let clickable = null;
+                    if (errorMatch) {
+                      const file = errorMatch[1];
+                      const line = parseInt(errorMatch[2], 10);
+                      const msg = errorMatch[3];
+                      
+                      const isError = log.toLowerCase().includes('error');
+                      const isWarning = log.toLowerCase().includes('warning');
+                      const textColor = isError ? 'text-red-400 hover:text-red-300' : isWarning ? 'text-yellow-400 hover:text-yellow-300' : 'text-slate-300 hover:text-white';
+                      
+                      // split log to highlight just the error part
+                      const matchIndex = log.indexOf(errorMatch[0]);
+                      const prefix = log.substring(0, matchIndex);
+                      
+                      clickable = (
+                        <span>
+                          {prefix}
+                          <span 
+                            className={`${textColor} hover:underline cursor-pointer`}
+                            onClick={() => {
+                              // Find file by name
+                              const fileName = file.split(/[/\\]/).pop() || file;
+                              const foundId = Object.keys(filesData).find(id => filesData[id].path.endsWith(fileName));
+                              if (foundId) {
+                                 setActiveFile(foundId);
+                                 if (!openedTabs.includes(foundId)) {
+                                   setOpenedTabs(p => [...p, foundId]);
+                                 }
+                                 // jump to line
+                                 setTimeout(() => {
+                                   if (editorRef.current) {
+                                      editorRef.current.revealLineInCenter(line);
+                                      editorRef.current.setPosition({ lineNumber: line, column: 1 });
+                                      editorRef.current.focus();
+                                   }
+                                 }, 100);
+                              }
+                            }}
+                          >
+                            {file}:{line} {msg}
+                          </span>
+                        </span>
+                      );
+                    }
+                    return (
+                      <div key={i} className="mb-0.5">
+                        <span className="text-emerald-500/30 mr-3 border-r border-slate-700/50 pr-3 select-none inline-block w-[30px] text-right">
+                          {i + 1}
+                        </span>
+                        {clickable || log}
+                      </div>
+                    );
+                  })}
+                  {buildDialog.error && (
+                    <div className="mt-2 text-red-400">{buildDialog.error}</div>
+                  )}
+                  {isBuildingLocal && (
+                     <div className="mt-2 text-slate-500 flex items-center gap-2 animate-pulse">
+                        <Terminal className="w-3 h-3 text-emerald-500/50" />
+                        Running...
+                     </div>
+                  )}
+                 </div>
+              </Panel>
+            </>
+          )}
+
+            </PanelGroup>
+          </Panel>
+
+          <PanelResizeHandle className="w-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-col-resize z-50 relative" />
+
+          {/* Sidebar Project Tree (Right) */}
+          <Panel id="files" order={3} defaultSize={20} minSize={15} className="bg-[#121214] border-l border-white/10 flex flex-col z-10">
+            <div className="p-4 overflow-y-auto w-full">
+               <div className="flex items-center justify-between mb-3 w-full">
+                 <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Project</h2>
+                 <div className="flex items-center gap-2">
+                   <button onClick={async () => {
+                       const name = await customPrompt("Enter new folder name in root:");
+                       if (name) {
+                           const folderPath = name.endsWith('/') ? name : name + '/';
+                           handleAddFile(folderPath + '.gitkeep', "");
+                       }
+                   }} className="text-slate-400 hover:text-white" title="New Folder"><FolderPlus className="w-4 h-4" /></button>
+                   <button onClick={async () => {
+                       const name = await customPrompt("Enter new file name in root:", "new_file.v");
+                       if (name) {
+                           handleAddFile(name, "// New file\n");
+                       }
+                   }} className="text-slate-400 hover:text-white" title="New File"><FilePlus className="w-4 h-4" /></button>
+                   <button onClick={() => {
+                       handleFileUploadMenu('');
+                   }} className="text-slate-400 hover:text-white" title="Upload File"><Upload className="w-4 h-4" /></button>
+                 </div>
                </div>
-             </div>
-            <div className="space-y-1">
-              {renderTree(treeRoot)}
+              <div className="space-y-1">
+                {renderTree(treeRoot)}
+              </div>
             </div>
-          </div>
-        </div>
+          </Panel>
+        </PanelGroup>
       </div>
 
       <DiffViewerModal
@@ -1254,14 +1349,6 @@ export default function App() {
         error={gistExportDialog.error}
         isProcessing={isExportingGist}
         onClose={() => setGistExportDialog(prev => ({...prev, isOpen: false}))}
-      />
-
-      <BuildDialog 
-        isOpen={buildDialog.isOpen}
-        logs={buildDialog.logs}
-        error={buildDialog.error}
-        isProcessing={isBuildingLocal}
-        onClose={() => setBuildDialog(prev => ({...prev, isOpen: false}))}
       />
     </div>
   );
