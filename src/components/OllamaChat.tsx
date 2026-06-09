@@ -44,7 +44,7 @@ const CodeBlock = ({ lang, code, onAddFile, onProposeMerge }: { lang: string, co
                     </div>
                 )}
             </div>
-            <pre className="p-3 overflow-x-auto text-[12px] font-mono text-slate-300 selection:bg-emerald-500/30">
+            <pre className="p-3 overflow-x-auto text-[12px] font-mono text-slate-300 selection:bg-emerald-500/30 max-h-64 overflow-y-auto">
                 {code}
             </pre>
         </div>
@@ -70,8 +70,14 @@ function MessageContent({ content, onAddFile, onProposeMerge }: { content: strin
 }
 
 export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any> }) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>({});
+  const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
+  const [errorMap, setErrorMap] = useState<Record<string, string | null>>({});
+
+  const messages = activeFileId ? (messagesMap[activeFileId] || []) : [];
+  const isLoading = activeFileId ? (loadingMap[activeFileId] || false) : false;
+  const error = activeFileId ? (errorMap[activeFileId] || null) : null;
+
   const [showSettings, setShowSettings] = useState(false);
   
   // Settings
@@ -81,7 +87,27 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   const [model, setModel] = useState(() => {
     return localStorage.getItem('gemini_model') || '';
   });
-  const [error, setError] = useState<string | null>(null);
+
+  const setError = (err: string | null, targetFileId?: string) => {
+    const fileId = targetFileId || activeFileId;
+    if (!fileId) return;
+    setErrorMap(prev => ({ ...prev, [fileId]: err }));
+  };
+
+  const setMessages = (updater: Message[] | ((prev: Message[]) => Message[]), targetFileId?: string) => {
+    const fileId = targetFileId || activeFileId;
+    if (!fileId) return;
+    setMessagesMap(prev => ({
+      ...prev,
+      [fileId]: typeof updater === 'function' ? updater(prev[fileId] || []) : updater
+    }));
+  };
+
+  const setIsLoading = (loading: boolean, targetFileId?: string) => {
+    const fileId = targetFileId || activeFileId;
+    if (!fileId) return;
+    setLoadingMap(prev => ({ ...prev, [fileId]: loading }));
+  };
 
   const aiConfig = useMemo(() => {
     if (!allFiles) return {};
@@ -139,26 +165,30 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
 
   useEffect(() => {
     if (activeFileId) {
-      fetch(`/api/messages/${activeFileId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (Array.isArray(data)) {
-            setMessages(data);
-          }
-        })
-        .catch(err => console.error("Failed to load messages", err));
-    } else {
-      setMessages([]);
+      setMessagesMap(prev => {
+        if (!prev[activeFileId]) {
+          fetch(`/api/messages/${activeFileId}`)
+            .then(res => res.json())
+            .then(data => {
+              if (Array.isArray(data)) {
+                setMessagesMap(m => ({ ...m, [activeFileId]: data }));
+              }
+            })
+            .catch(err => console.error("Failed to load messages", err));
+          return { ...prev, [activeFileId]: [] };
+        }
+        return prev;
+      });
     }
   }, [activeFileId]);
 
-  const saveMessage = async (role: string, content: string) => {
-    if (!activeFileId) return;
+  const saveMessage = async (role: string, content: string, fileId: string) => {
+    if (!fileId) return;
     try {
       await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_id: activeFileId, role, content })
+        body: JSON.stringify({ file_id: fileId, role, content })
       });
     } catch (err) {
       console.error("Failed to save message", err);
@@ -166,11 +196,12 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    const targetFileId = activeFileId;
+    if (!targetFileId || !input.trim() || isLoading) return;
 
     const userMessage = input.trim();
     setInput('');
-    setError(null);
+    setError(null, targetFileId);
     
     // Add file context to system prompt if available
     let promptPrefix = "";
@@ -218,16 +249,17 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
     if (activeFilePath) {
       promptPrefix += `[Context: User is currently working on file: ${activeFilePath}]\n`;
       if (activeFileContent) {
-        promptPrefix += `[Current File Content:\n\`\`\`\n${activeFileContent}\n\`\`\`\n]\n[Instruction: Below is the user's request. Modify the code to fulfill the request. When providing the updated code, please output the FULL file content with your changes integrated, preserving the rest of the existing code so it can be directly merged.]\n\n`;
+        promptPrefix += `[Current File Content:\n\`\`\`\n${activeFileContent}\n\`\`\`\n]\n[Instruction: Below is the user's request. Modify the code to fulfill the request. When providing the updated code, please output the FULL file content with your changes integrated, preserving the rest of the existing code so it can be directly merged. IMPORTANT: Provide your textual explanation FIRST, and output the final code block LAST.]\n\n`;
       }
     }
 
     const newMessageObj: Message = { role: 'user', content: userMessage };
-    const newMessages = [...messages, newMessageObj];
-    setMessages(newMessages);
-    setIsLoading(true);
+    const currentMessages = targetFileId ? (messagesMap[targetFileId] || []) : [];
+    const newMessages = [...currentMessages, newMessageObj];
+    setMessages(newMessages, targetFileId);
+    setIsLoading(true, targetFileId);
 
-    await saveMessage('user', userMessage);
+    await saveMessage('user', userMessage, targetFileId);
 
     // Prepare API messages 
     const apiMessages = [...newMessages];
@@ -307,16 +339,16 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
       }
       
       if (dataMsg && dataMsg.role) {
-        setMessages(prev => [...prev, dataMsg]);
-        await saveMessage(dataMsg.role, dataMsg.content);
+        setMessages(prev => [...prev, dataMsg], targetFileId);
+        await saveMessage(dataMsg.role, dataMsg.content, targetFileId);
       } else {
         throw new Error('Invalid response format from server');
       }
     } catch (err: any) {
       console.error('AI Error:', err);
-      setError(err.message);
+      setError(err.message, targetFileId);
     } finally {
-      setIsLoading(false);
+      setIsLoading(false, targetFileId);
     }
   };
 

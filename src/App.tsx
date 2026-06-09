@@ -112,7 +112,7 @@ export default function App() {
   };
   
   const [isChatOpen, setIsChatOpen] = useState(true);
-  const [chatInput, setChatInput] = useState('');
+  const [chatInputs, setChatInputs] = useState<Record<string, string>>({});
   const [proposedMergeCode, setProposedMergeCode] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<{id: string, name: string}[]>([]);
@@ -875,7 +875,15 @@ export default function App() {
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Portal>
                      <DropdownMenu.Content align="end" sideOffset={2} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[120px] z-50">
-                        <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); setChatInput((prev) => prev + (prev.endsWith(' ') || prev === '' ? '' : ' ') + `{${node.path}}`); setIsChatOpen(true); }} className="px-3 py-1.5 text-xs text-indigo-300 hover:bg-indigo-500/10 hover:text-indigo-200 cursor-pointer outline-none flex items-center gap-2">
+                        <DropdownMenu.Item onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setChatInputs((prev) => {
+                             const aid = activeFile || '_global';
+                             const current = prev[aid] || '';
+                             return { ...prev, [aid]: current + (current.endsWith(' ') || current === '' ? '' : ' ') + `{${node.path}}` };
+                          }); 
+                          setIsChatOpen(true); 
+                        }} className="px-3 py-1.5 text-xs text-indigo-300 hover:bg-indigo-500/10 hover:text-indigo-200 cursor-pointer outline-none flex items-center gap-2">
                             <Link className="w-3 h-3" /> Reference
                         </DropdownMenu.Item>
                         {node.fileId && (
@@ -1358,8 +1366,14 @@ int main(int argc, char** argv) {
                    activeFileContent={filesData[activeFile]?.content || null} 
                    projectContext={Object.values(filesData).find((f: any) => f.path === 'ai_context.md' || f.name === 'ai_context.md')?.content || null}
                    onProposeMerge={setProposedMergeCode}
-                   input={chatInput}
-                   setInput={setChatInput}
+                   input={activeFile ? (chatInputs[activeFile] || '') : ''}
+                   setInput={(val) => {
+                     const aid = activeFile || '_global';
+                     setChatInputs(prev => ({
+                       ...prev, 
+                       [aid]: typeof val === 'function' ? val(prev[aid] || '') : val
+                     }));
+                   }}
                    allFiles={filesData}
                 />
               </Panel>
