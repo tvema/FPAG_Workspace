@@ -500,6 +500,16 @@ async function startServer() {
           }
           result.commitResult = commitOutput;
         }
+      } else if (action === 'show') {
+         if (isRepo) {
+            try {
+               const fileContent = await git.show([`HEAD:${path}`]);
+               result.content = fileContent;
+            } catch(e: any) {
+               result.content = null;
+               result.error = e.message;
+            }
+         }
       }
       
       res.json(result);

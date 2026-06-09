@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, ChevronRight, ChevronDown, Folder, FolderOpen, MessageSquare, GitMerge, Pencil, Trash2, FilePlus, FolderPlus, Type, X, MoreVertical, Link, Github, Activity, FileText, Upload, Box, Hash } from 'lucide-react';
+import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, ChevronRight, ChevronDown, Folder, FolderOpen, MessageSquare, GitMerge, Pencil, Trash2, FilePlus, FolderPlus, Type, X, MoreVertical, Link, Github, Activity, FileText, Upload, Box, Hash, GitPullRequest } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import debounce from 'lodash.debounce';
 
@@ -24,6 +24,7 @@ import { GitCommitDialog } from './components/GitCommitDialog';
 import { MessageOverlay } from './components/MessageOverlay';
 import { GithubExportDialog } from './components/GithubExportDialog';
 import { DiffViewerModal } from './components/DiffViewerModal';
+import { GitDiffModal } from './components/GitDiffModal';
 import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
 import { TestbenchDialog } from './components/TestbenchDialog';
 import { parseVCD } from './utils/vcdParser';
@@ -187,6 +188,28 @@ export default function App() {
   const [gitCommitDialogState, setGitCommitDialogState] = useState(false);
   const [gitMessageOpen, setGitMessageOpen] = useState(false);
   const [gitMessageContent, setGitMessageContent] = useState<any>(null);
+
+  const [gitDiffModalState, setGitDiffModalState] = useState<{isOpen: boolean, content: string}>({isOpen: false, content: ''});
+
+  const fetchGitDiffForActiveFile = async () => {
+    if (!activeFile || !filesData[activeFile]) return;
+    try {
+      const res = await fetch('/api/git/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: activeProject, action: 'show', path: filesData[activeFile].path })
+      });
+      const data = await res.json();
+      if (data.success && data.content !== null) {
+        setGitDiffModalState({ isOpen: true, content: data.content });
+      } else {
+        alert("Could not fetch original file from git. Maybe it hasn't been committed yet?");
+      }
+    } catch(e) {
+      console.error(e);
+      alert("Error fetching diff");
+    }
+  };
 
   const customPrompt = (title: string, defaultValue: string = ''): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -1296,19 +1319,32 @@ int main(int argc, char** argv) {
           <Panel id="editor" defaultSize={isChatOpen ? 55 : 80} minSize={30} className="flex flex-col min-w-0 bg-[#1e1e1e]">
             <PanelGroup orientation="vertical" id="workspace-vertical-v5">
               <Panel id="editor-main" defaultSize={buildDialog.isOpen ? 70 : 100} className="flex flex-col relative min-h-0">
-                <div className="flex bg-[#121214] border-b border-black/50 overflow-x-auto no-scrollbar shrink-0">
-            {openedTabs.map(id => (
-              <div 
-                key={id} 
-                onClick={() => setActiveFile(id)} 
-                className={`flex items-center gap-2 px-4 py-2 border-r border-white/5 cursor-pointer text-sm transition-colors ${activeFile === id ? 'bg-[#1e1e1e] text-slate-200 border-t border-t-emerald-500' : 'bg-[#16161a] text-slate-500 hover:text-slate-300 border-t border-transparent'}`}
-              >
-                <FileCode2 className="w-3 h-3" />
-                <span>{filesData[id]?.name}</span>
-                <button onClick={(e) => closeTab(e, id)} className="hover:bg-white/10 rounded-md p-0.5 ml-1 transition-colors"><X className="w-3 h-3" /></button>
-              </div>
-            ))}
-          </div>
+                <div className="flex bg-[#121214] border-b border-black/50 overflow-x-auto no-scrollbar shrink-0 justify-between items-center">
+                  <div className="flex">
+                    {openedTabs.map(id => (
+                      <div 
+                        key={id} 
+                        onClick={() => setActiveFile(id)} 
+                        className={`flex items-center gap-2 px-4 py-2 border-r border-white/5 cursor-pointer text-sm transition-colors ${activeFile === id ? 'bg-[#1e1e1e] text-slate-200 border-t border-t-emerald-500' : 'bg-[#16161a] text-slate-500 hover:text-slate-300 border-t border-transparent'}`}
+                      >
+                        <FileCode2 className="w-3 h-3" />
+                        <span>{filesData[id]?.name}</span>
+                        <button onClick={(e) => closeTab(e, id)} className="hover:bg-white/10 rounded-md p-0.5 ml-1 transition-colors"><X className="w-3 h-3" /></button>
+                      </div>
+                    ))}
+                  </div>
+                  {activeFile && !filesData[activeFile]?.is_link && (
+                    <div className="pr-4">
+                      <button 
+                        onClick={() => fetchGitDiffForActiveFile()}
+                        className="text-xs flex items-center gap-2 text-slate-400 hover:text-white px-2 py-1 rounded bg-white/5 hover:bg-white/10 transition-colors"
+                      >
+                        <GitPullRequest className="w-3.5 h-3.5" />
+                        View Git Diff
+                      </button>
+                    </div>
+                  )}
+                </div>
           <div className="flex-1 overflow-hidden relative">
             {activeFile ? (
               ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && !fileUIStates[activeFile]?.isTextMode ? (
@@ -1524,6 +1560,13 @@ int main(int argc, char** argv) {
         onCreate={handleCreateTestbench}
       />
       
+      <GitDiffModal 
+        isOpen={gitDiffModalState.isOpen}
+        onClose={() => setGitDiffModalState({ isOpen: false, content: '' })}
+        originalContent={gitDiffModalState.content}
+        filesData={filesData}
+        activeFile={activeFile}
+      />
       <GitCommitDialog
         isOpen={gitCommitDialogState}
         gitStatus={gitStatus}
