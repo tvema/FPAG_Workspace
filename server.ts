@@ -491,9 +491,16 @@ async function startServer() {
         if (isRepo) {
           await git.addConfig('user.name', 'Workspace User');
           await git.addConfig('user.email', 'workspace@example.com');
+          
+          try {
+            await fs.access(nodePath.join(exportDir, '.gitignore'));
+          } catch {
+            await fs.writeFile(nodePath.join(exportDir, '.gitignore'), '*.vcd\n*.vvp\n*.out\nsim/\n', 'utf8');
+          }
+
           let commitOutput = '';
           try {
-             commitOutput = await git.raw(['commit', '-m', commitMessage || 'Workspace update']);
+             commitOutput = await git.raw(['commit', '-a', '-m', commitMessage || 'Workspace update']);
           } catch(e: any) {
              commitOutput = e.message;
              result.success = false;
