@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { GitMerge } from 'lucide-react';
-import ReactDiffViewer from 'react-diff-viewer-continued';
+import { DiffEditor } from '@monaco-editor/react';
 
 interface DiffViewerModalProps {
   proposedMergeCode: string | null;
@@ -11,6 +11,21 @@ interface DiffViewerModalProps {
 }
 
 export function DiffViewerModal({ proposedMergeCode, setProposedMergeCode, filesData, activeFile, handleAddFile }: DiffViewerModalProps) {
+  const fileType = filesData[activeFile]?.type?.toLowerCase() || '';
+  const fileName = (filesData[activeFile]?.name || '').toLowerCase();
+  
+  const language = 
+    ['v', 'sv', 'verilog'].includes(fileType) ? 'verilog' :
+    ['tcl', 'sdc'].includes(fileType) ? 'tcl' :
+    ['makefile', 'mak', 'mk'].includes(fileType) || fileName === 'makefile' ? 'makefile' :
+    ['c', 'h'].includes(fileType) ? 'c' :
+    ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(fileType) ? 'cpp' :
+    ['py', 'python'].includes(fileType) ? 'python' :
+    ['json'].includes(fileType) ? 'json' :
+    ['xml'].includes(fileType) ? 'xml' :
+    ['md', 'markdown', 'txt', 'text'].includes(fileType) ? 'markdown' :
+    'plaintext';
+
   return (
     <AnimatePresence>
       {proposedMergeCode !== null && (
@@ -44,30 +59,23 @@ export function DiffViewerModal({ proposedMergeCode, setProposedMergeCode, files
               </div>
             </div>
             
-            <div className="flex-1 overflow-auto bg-[#1e1e1e]">
-              <ReactDiffViewer
-                oldValue={filesData[activeFile]?.content || ''}
-                newValue={proposedMergeCode}
-                splitView={window.innerWidth > 768}
-                useDarkTheme={true}
-                styles={{
-                  variables: {
-                    dark: {
-                      diffViewerBackground: '#1e1e1e',
-                      gutterBackground: '#16161a',
-                      addedBackground: 'rgba(16, 185, 129, 0.1)',
-                      addedGutterBackground: 'rgba(16, 185, 129, 0.2)',
-                      wordAddedBackground: 'rgba(16, 185, 129, 0.3)',
-                      removedBackground: 'rgba(239, 68, 68, 0.1)',
-                      removedGutterBackground: 'rgba(239, 68, 68, 0.2)',
-                      wordRemovedBackground: 'rgba(239, 68, 68, 0.3)',
-                      codeFoldBackground: '#121214',
-                      codeFoldContentColor: '#8b949e',
-                      emptyLineBackground: '#1e1e1e'
-                    }
-                  },
-                  line: { padding: '4px', fontSize: '13px', lineHeight: '1.5' },
-                  gutter: { padding: '0 12px', minWidth: '40px' }
+            <div className="flex-1 overflow-hidden bg-[#1e1e1e]">
+              <DiffEditor
+                original={filesData[activeFile]?.content || ''}
+                modified={proposedMergeCode}
+                language={language}
+                theme="vs-dark"
+                options={{
+                  renderSideBySide: window.innerWidth > 768,
+                  useInlineViewWhenSpaceIsLimited: true,
+                  scrollBeyondLastLine: false,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 13,
+                  minimap: { enabled: false },
+                  originalEditable: false,
+                  readOnly: true,
+                  renderIndicators: true,
+                  diffAlgorithm: 'advanced'
                 }}
               />
             </div>
