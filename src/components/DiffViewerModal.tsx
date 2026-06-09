@@ -75,7 +75,10 @@ export function DiffViewerModal({ proposedMergeCode, setProposedMergeCode, files
                   originalEditable: false,
                   readOnly: true,
                   renderIndicators: true,
-                  diffAlgorithm: 'advanced'
+                  renderOverviewRuler: false,
+                  diffAlgorithm: 'advanced',
+                  smoothScrolling: true,
+                  padding: { top: 16, bottom: 16 }
                 }}
               />
             </div>
