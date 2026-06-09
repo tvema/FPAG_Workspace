@@ -783,6 +783,17 @@ export default function App() {
                          >
                              <Link className="w-3 h-3" /> Add Link to File
                          </DropdownMenu.Item>
+                         {node.path !== '' && (
+                         <DropdownMenu.Item 
+                           onClick={(e) => { 
+                              e.stopPropagation(); 
+                              handleRenameFolder(node.path);
+                           }} 
+                           className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
+                         >
+                             <Type className="w-3 h-3" /> Rename Folder
+                         </DropdownMenu.Item>
+                         )}
                          <DropdownMenu.Separator className="h-px bg-white/5 my-1" />
                          <DropdownMenu.Item 
                            onClick={(e) => { 
@@ -906,7 +917,7 @@ export default function App() {
       });
   };
 
-  const handleAddFile = async (path: string, content: string, projId?: string, is_link?: boolean) => {
+  const handleAddFile = async (path: string, content: string, projId?: string, is_link?: boolean, openTab: boolean = true) => {
       const targetProj = projId || activeProject;
       const id = `${targetProj}_${path.replace(/[^a-zA-Z0-9]/g, '_')}`;
       const name = path.split('/').pop() || id;
@@ -917,8 +928,10 @@ export default function App() {
           ...prev,
           [id]: fileObj
       }));
-      setActiveFile(id);
-      setOpenedTabs(prev => prev.includes(id) ? prev : [...prev, id]);
+      if (openTab) {
+          setActiveFile(id);
+          setOpenedTabs(prev => prev.includes(id) ? prev : [...prev, id]);
+      }
 
       if (targetProj && !is_link) await saveFileDirect(id, fileObj, targetProj);
       else if (targetProj && is_link) {
@@ -1098,6 +1111,45 @@ int main(int argc, char** argv) {
           setFilesData(prev => { const next = {...prev}; delete next[id]; return next; });
           setOpenedTabs(prev => prev.filter(fid => fid !== id));
           handleAddFile(newPath, content);
+      }
+  };
+
+  const handleRenameFolder = async (folderPath: string) => {
+      const folderName = folderPath.split('/').pop() || '';
+      const parentPath = folderPath.substring(0, folderPath.lastIndexOf('/'));
+      
+      const newName = await customPrompt(`Enter new folder name for ${folderName}`, folderName);
+      if (newName && newName !== folderName) {
+          const newFolderPath = parentPath ? `${parentPath}/${newName}` : newName;
+          
+          const filesToRename = Object.entries(filesData).filter(([_, file]) => 
+             file.path.startsWith(folderPath + '/')
+          );
+
+          if (filesToRename.length > 0) {
+              setFilesData(prev => { 
+                 const next = {...prev}; 
+                 for (const [id] of filesToRename) delete next[id]; 
+                 return next; 
+              });
+              
+              setOpenedTabs(prev => {
+                 let nextTabs = prev.filter(fid => !filesToRename.some(([id]) => id === fid));
+                 if (activeFile && filesToRename.some(([id]) => id === activeFile)) {
+                     setActiveFile(nextTabs[nextTabs.length - 1] || '');
+                 }
+                 return nextTabs;
+              });
+              
+              const renamePromises = filesToRename.map(async ([id, file]) => {
+                  const relativePath = file.path.substring(folderPath.length);
+                  const newPath = newFolderPath + relativePath;
+                  await fetch(`/api/files/${id}`, { method: 'DELETE' }).catch(console.error);
+                  await handleAddFile(newPath, file.content, activeProject || undefined, file.is_link, false);
+              });
+
+              await Promise.all(renamePromises);
+          }
       }
   };
 
