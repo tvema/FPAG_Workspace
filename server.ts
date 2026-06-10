@@ -91,8 +91,8 @@ async function startServer() {
       const fs = await import('fs/promises');
       const nodePath = await import('path');
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
-
+      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
+      
       for (const row of rows) {
         if (row.is_link) {
           try {
@@ -155,7 +155,7 @@ async function startServer() {
           const fs = await import('fs/promises');
           const nodePath = await import('path');
           const sanitize = (n: string) => n.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-          const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+          const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
           const fullPath = nodePath.resolve(exportDir, path);
           await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
           await fs.writeFile(fullPath, content || '', 'utf8');
@@ -181,7 +181,7 @@ async function startServer() {
           const fs = await import('fs/promises');
           const nodePath = await import('path');
           const sanitize = (n: string) => n.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-          const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+          const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
           const fullPath = nodePath.resolve(exportDir, file.path);
           try { await fs.unlink(fullPath); } catch (e) {}
         }
@@ -403,7 +403,7 @@ async function startServer() {
       
       // Determine export dir: projects/<project_name_sanitized>
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
       
       await fs.mkdir(exportDir, { recursive: true });
       
@@ -453,7 +453,7 @@ async function startServer() {
       const fs = await import('fs/promises');
       const { simpleGit } = await import('simple-git');
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
       
       await fs.mkdir(exportDir, { recursive: true });
       const git = simpleGit(exportDir);
@@ -536,7 +536,7 @@ async function startServer() {
       const fs = await import('fs/promises');
       const { simpleGit } = await import('simple-git');
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
       
       try { await fs.access(exportDir); } catch { await fs.mkdir(exportDir, { recursive: true }); }
       const git = simpleGit(exportDir);
@@ -579,7 +579,7 @@ async function startServer() {
       
       // Determine export dir: projects_export/<project_name_sanitized>
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
       
       await fs.mkdir(exportDir, { recursive: true });
       
@@ -622,7 +622,7 @@ async function startServer() {
       const fs = await import('fs/promises');
       const nodePath = await import('path');
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.cwd(), 'projects_export', sanitize(project.name));
+      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
       const fullPath = nodePath.resolve(exportDir, filePath);
       
       // prevent directory traversal

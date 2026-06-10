@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, ChevronRight, ChevronDown, Folder, FolderOpen, MessageSquare, GitMerge, Pencil, Trash2, FilePlus, FolderPlus, Type, X, MoreVertical, Link, Github, Activity, FileText, Upload, Box, Hash, GitPullRequest } from 'lucide-react';
+import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, ChevronRight, ChevronDown, Folder, FolderOpen, MessageSquare, GitMerge, Pencil, Trash2, FilePlus, FolderPlus, Type, X, MoreVertical, Link, Github, Activity, FileText, Upload, Box, Hash, GitPullRequest, Save } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import debounce from 'lodash.debounce';
 
@@ -84,7 +84,7 @@ const initialFiles: Record<string, any> = {
 };
 
 export default function App() {
-  const [filesData, setFilesData] = useState<Record<string, {name: string, path: string, type: string, content: string, is_link?: boolean}>>({});
+  const [filesData, setFilesData] = useState<Record<string, {name: string, path: string, type: string, content: string, is_link?: boolean, is_modified?: boolean}>>({});
   const [activeFile, setActiveFile] = useState<string>('');
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
@@ -461,6 +461,10 @@ export default function App() {
   };
 
   const handleRunMake = async () => {
+    if (Object.values(filesData).some(f => f.is_modified)) {
+      alert("Please save all modified files before running Make.");
+      return;
+    }
     setIsBuildingLocal(true);
     
     // Determine working directory for make
@@ -547,19 +551,40 @@ export default function App() {
       }).catch(err => console.error("Failed to save file remotely", err));
   }, []);
 
-  const saveFileToAPI = useCallback(
-    (id: string, fileObj: any, projId: string) => {
-      let debounced = debounceMap.get(id);
-      if (!debounced) {
-         debounced = debounce((idArg: string, fileObjArg: any, projIdArg: string) => {
-            saveFileDirect(idArg, fileObjArg, projIdArg);
-         }, 1000);
-         debounceMap.set(id, debounced);
+  const saveFile = useCallback(async (id: string) => {
+    if (!activeProject || !filesData[id] || !filesData[id].is_modified) return;
+    await saveFileDirect(id, filesData[id], activeProject);
+    setFilesData(prev => ({
+      ...prev,
+      [id]: { ...prev[id], is_modified: false }
+    }));
+  }, [activeProject, filesData, saveFileDirect]);
+
+  const saveAllFiles = useCallback(async () => {
+    if (!activeProject) return;
+    const modifiedIds = Object.keys(filesData).filter(id => filesData[id].is_modified);
+    await Promise.all(modifiedIds.map(async id => {
+      await saveFileDirect(id, filesData[id], activeProject);
+      setFilesData(prev => ({
+        ...prev,
+        [id]: { ...prev[id], is_modified: false }
+      }));
+    }));
+  }, [activeProject, filesData, saveFileDirect]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 's' || e.key.toLowerCase() === 'ы')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (activeFile) {
+          saveFile(activeFile);
+        }
       }
-      debounced(id, fileObj, projId);
-    },
-    [debounceMap, saveFileDirect]
-  );
+    };
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [saveFile, activeFile]);
 
   // Load Projects on mount
   useEffect(() => {
@@ -1042,6 +1067,12 @@ int main(int argc, char** argv) {
   };
 
   const handleGitAction = async (action: 'init' | 'add' | 'rm' | 'commit', path?: string, commitMessage?: string) => {
+    if (action === 'commit' || action === 'add' || action === 'init') {
+      if (Object.values(filesData).some(f => f.is_modified)) {
+        alert("Please save all modified files before performing Git actions.");
+        return;
+      }
+    }
     try {
       const res = await fetch('/api/git/action', {
         method: 'POST',
@@ -1312,6 +1343,19 @@ int main(int argc, char** argv) {
                <FilePlus className="w-3.5 h-3.5" />
                New
              </button>
+             
+             <div className="h-4 w-px bg-white/10 mx-1"></div>
+
+             <button onClick={() => saveFile(activeFile)} disabled={!activeFile || !filesData[activeFile]?.is_modified} className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-colors ${!activeFile || !filesData[activeFile]?.is_modified ? 'text-slate-500 bg-white/5 cursor-not-allowed border border-white/5' : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 cursor-pointer'}`}>
+               <Save className="w-3.5 h-3.5" />
+               Save
+               <span className="text-[10px] opacity-60 ml-1">Ctrl+S</span>
+             </button>
+             
+             <button onClick={saveAllFiles} disabled={!Object.values(filesData).some(f => f.is_modified)} className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-colors ${!Object.values(filesData).some(f => f.is_modified) ? 'text-slate-500 bg-white/5 cursor-not-allowed border border-white/5' : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 cursor-pointer'}`}>
+               <Save className="w-3.5 h-3.5" />
+               Save All
+             </button>
           </div>
         </div>
         
@@ -1476,7 +1520,7 @@ int main(int argc, char** argv) {
                         className={`flex items-center gap-2 px-4 py-2 border-r border-white/5 cursor-pointer text-sm shrink-0 transition-colors ${activeFile === id ? 'bg-[#1e1e1e] text-slate-200 border-t border-t-emerald-500' : 'bg-[#16161a] text-slate-500 hover:text-slate-300 border-t border-transparent'} ${dragOverTab === id ? 'border-l-2 border-l-emerald-500' : ''} ${draggedTab === id ? 'opacity-50' : ''}`}
                       >
                         <FileCode2 className="w-3 h-3" />
-                        <span>{filesData[id]?.name}</span>
+                        <span>{filesData[id]?.name}{filesData[id]?.is_modified && <span className="text-emerald-400 font-bold ml-1">•</span>}</span>
                         <button onClick={(e) => closeTab(e, id)} className="hover:bg-white/10 rounded-md p-0.5 ml-1 transition-colors"><X className="w-3 h-3" /></button>
                       </div>
                     ))}
@@ -1502,7 +1546,7 @@ int main(int argc, char** argv) {
                               >
                                 <div className="flex items-center gap-2 truncate">
                                   <FileCode2 className="w-3 h-3 shrink-0" />
-                                  <span className="truncate">{filesData[id]?.name}</span>
+                                  <span className="truncate">{filesData[id]?.name}{filesData[id]?.is_modified && <span className="text-emerald-400 font-bold ml-1">•</span>}</span>
                                 </div>
                                 <button onClick={(e) => closeTab(e, id)} className="hover:bg-white/10 rounded-md p-1 ml-2 transition-colors shrink-0 text-slate-500 hover:text-red-400"><X className="w-3 h-3" /></button>
                               </DropdownMenu.Item>
@@ -1578,9 +1622,8 @@ int main(int argc, char** argv) {
                     const content = val;
                     setFilesData(prev => ({
                       ...prev,
-                      [activeFile]: { ...prev[activeFile], content }
+                      [activeFile]: { ...prev[activeFile], content, is_modified: true }
                     }));
-                    if (activeProject) saveFileToAPI(activeFile, { ...filesData[activeFile], content }, activeProject);
                   }
                 }}
                 options={{ minimap: { enabled: showMinimap }, fontSize: 13, scrollBeyondLastLine: false, wordWrap: 'on' }}
