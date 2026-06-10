@@ -271,6 +271,44 @@ export default function App() {
     editorRef.current = editor;
   }, []);
 
+  const editorOptions = useMemo(() => ({
+    minimap: { enabled: showMinimap },
+    fontSize: 13,
+    scrollBeyondLastLine: false,
+    wordWrap: 'on' as const,
+    smoothScrolling: true,
+    fastScrollSensitivity: 5,
+  }), [showMinimap]);
+
+  const handleEditorBeforeMount = useCallback((monaco: any) => {
+    if (!monaco.languages.getLanguages().some((l: any) => l.id === 'makefile')) {
+      monaco.languages.register({ id: 'makefile' });
+      monaco.languages.setMonarchTokensProvider('makefile', {
+        tokenizer: {
+          root: [
+            [/^[a-zA-Z0-9_.-]+:/, 'keyword'],
+            [/^\s*#.*$/, 'comment'],
+            [/\$\([a-zA-Z0-9_.-]+\)/, 'variable'],
+            [/\$\{[a-zA-Z0-9_.-]+\}/, 'variable'],
+            [/=/, 'operator'],
+            [/\b(if|ifeq|else|endif)\b/, 'keyword'],
+            [/".*?"/, 'string'],
+            [/'.*?'/, 'string'],
+          ]
+        }
+      });
+    }
+  }, []);
+
+  const handleEditorChange = useCallback((val: string | undefined) => {
+    if (val !== undefined && activeFile) {
+      setFilesData(prev => ({
+        ...prev,
+        [activeFile]: { ...prev[activeFile], content: val, is_modified: true }
+      }));
+    }
+  }, [activeFile, setFilesData]);
+
   const handleConnectGitHub = async () => {
     try {
       const redirectUri = `${window.location.origin}/auth/callback`;
@@ -1583,55 +1621,31 @@ int main(int argc, char** argv) {
               ) : (['markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').endsWith('.md')) && !fileUIStates[activeFile]?.isTextMode ? (
                 <MarkdownWrapper content={filesData[activeFile]?.content || ''} />
               ) : (
-              <Editor
-                height="100%"
-                theme={editorTheme}
-                onMount={handleEditorDidMount}
-                language={
-                  ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :
-                  ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'tcl' :
-                  ['makefile', 'mak', 'mk', 'template'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').toLowerCase() === 'makefile' || (filesData[activeFile]?.name || '').toLowerCase().includes('makefile') ? 'makefile' :
-                  ['c', 'h'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'c' :
-                  ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'cpp' :
-                  ['ts', 'tsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'typescript' :
-                  ['js', 'jsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'javascript' :
-                  ['json'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'json' :
-                  ['md', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'markdown' :
-                  ['css'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'css' :
-                  ['html'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'html' :
-                  ['sh', 'bash'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'shell' : 'plaintext'
-                }
-                beforeMount={(monaco) => {
-                  if (!monaco.languages.getLanguages().some((l: any) => l.id === 'makefile')) {
-                    monaco.languages.register({ id: 'makefile' });
-                    monaco.languages.setMonarchTokensProvider('makefile', {
-                      tokenizer: {
-                        root: [
-                          [/^[a-zA-Z0-9_.-]+:/, 'keyword'],
-                          [/^\s*#.*$/, 'comment'],
-                          [/\$\([a-zA-Z0-9_.-]+\)/, 'variable'],
-                          [/\$\{[a-zA-Z0-9_.-]+\}/, 'variable'],
-                          [/=/, 'operator'],
-                          [/\b(if|ifeq|else|endif)\b/, 'keyword'],
-                          [/".*?"/, 'string'],
-                          [/'.*?'/, 'string'],
-                        ]
-                      }
-                    });
+              <div className="absolute inset-0 z-0" style={{ transform: 'translateZ(0)' }}>
+                <Editor
+                  height="100%"
+                  theme={editorTheme}
+                  onMount={handleEditorDidMount}
+                  language={
+                    ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :
+                    ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'tcl' :
+                    ['makefile', 'mak', 'mk', 'template'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').toLowerCase() === 'makefile' || (filesData[activeFile]?.name || '').toLowerCase().includes('makefile') ? 'makefile' :
+                    ['c', 'h'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'c' :
+                    ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'cpp' :
+                    ['ts', 'tsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'typescript' :
+                    ['js', 'jsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'javascript' :
+                    ['json'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'json' :
+                    ['md', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'markdown' :
+                    ['css'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'css' :
+                    ['html'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'html' :
+                    ['sh', 'bash'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'shell' : 'plaintext'
                   }
-                }}
-                value={filesData[activeFile]?.content || ''}
-                onChange={(val) => {
-                  if (val !== undefined && activeFile) {
-                    const content = val;
-                    setFilesData(prev => ({
-                      ...prev,
-                      [activeFile]: { ...prev[activeFile], content, is_modified: true }
-                    }));
-                  }
-                }}
-                options={{ minimap: { enabled: showMinimap }, fontSize: 13, scrollBeyondLastLine: false, wordWrap: 'on' }}
-              />
+                  beforeMount={handleEditorBeforeMount}
+                  value={filesData[activeFile]?.content || ''}
+                  onChange={handleEditorChange}
+                  options={editorOptions}
+                />
+              </div>
               )
             ) : (
               <div className="flex items-center justify-center h-full text-slate-600 text-sm">Select a file to edit</div>
