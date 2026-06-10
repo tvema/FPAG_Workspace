@@ -177,16 +177,25 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
 
   useEffect(() => {
     if (activeFileId) {
+      // Background fetch to update cache from server
+      fetch(`/api/messages/${activeFileId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setMessagesMap(m => {
+              // Only update if there's an actual change to avoid unnecessary re-renders
+              // Simple length check or stringify comparison
+              if (JSON.stringify(m[activeFileId]) !== JSON.stringify(data)) {
+                return { ...m, [activeFileId]: data };
+              }
+              return m;
+            });
+          }
+        })
+        .catch(err => console.error("Failed to load messages", err));
+        
       setMessagesMap(prev => {
         if (!prev[activeFileId]) {
-          fetch(`/api/messages/${activeFileId}`)
-            .then(res => res.json())
-            .then(data => {
-              if (Array.isArray(data)) {
-                setMessagesMap(m => ({ ...m, [activeFileId]: data }));
-              }
-            })
-            .catch(err => console.error("Failed to load messages", err));
           return { ...prev, [activeFileId]: [] };
         }
         return prev;
