@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Check } from 'lucide-react';
 import { defaultVerilogMake, defaultCppMake } from '../utils/templates';
 
@@ -6,13 +6,11 @@ export function TestbenchDialog({
   isOpen,
   onClose,
   filesData,
-  parentPath,
   onCreate
 }: {
   isOpen: boolean;
   onClose: () => void;
   filesData: Record<string, any>;
-  parentPath: string;
   onCreate: (tbName: string, filesToInclude: string[], makefileTemplate: string, tbExt: string) => void;
 }) {
   const [tbName, setTbName] = useState('tb_module');

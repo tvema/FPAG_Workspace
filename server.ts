@@ -3,8 +3,6 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
-import { GoogleGenAI } from "@google/genai";
-
 
 const db = new Database('project.db');
 
@@ -62,7 +60,7 @@ async function startServer() {
   // API endpoints
 
   // Projects API
-  app.get("/api/projects", (req, res) => {
+  app.get("/api/projects", (_req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM projects ORDER BY created_at DESC").all();
       res.json(rows);
@@ -91,7 +89,7 @@ async function startServer() {
       const fs = await import('fs/promises');
       const nodePath = await import('path');
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
+      const exportDir = nodePath.resolve(nodePath.join((await import('os')).tmpdir(), 'workspace_export'), sanitize(project.name));
       
       for (const row of rows) {
         if (row.is_link) {
@@ -113,7 +111,7 @@ async function startServer() {
   });
 
   // Get all files (fallback / debug)
-  app.get("/api/files", (req, res) => {
+  app.get("/api/files", (_req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM files").all();
       res.json(rows);
@@ -157,7 +155,7 @@ async function startServer() {
           const fs = await import('fs/promises');
           const nodePath = await import('path');
           const sanitize = (n: string) => n.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-          const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
+          const exportDir = nodePath.resolve(nodePath.join((await import('os')).tmpdir(), 'workspace_export'), sanitize(project.name));
           const fullPath = nodePath.resolve(exportDir, path);
           await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
           await fs.writeFile(fullPath, content || '', 'utf8');
@@ -183,7 +181,7 @@ async function startServer() {
           const fs = await import('fs/promises');
           const nodePath = await import('path');
           const sanitize = (n: string) => n.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-          const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
+          const exportDir = nodePath.resolve(nodePath.join((await import('os')).tmpdir(), 'workspace_export'), sanitize(project.name));
           const fullPath = nodePath.resolve(exportDir, file.path);
           try { await fs.unlink(fullPath); } catch (e) {}
         }
@@ -405,7 +403,7 @@ async function startServer() {
       
       // Determine export dir: projects/<project_name_sanitized>
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
+      const exportDir = nodePath.resolve(nodePath.join((await import('os')).tmpdir(), 'workspace_export'), sanitize(project.name));
       
       await fs.mkdir(exportDir, { recursive: true });
       
@@ -455,7 +453,7 @@ async function startServer() {
       const fs = await import('fs/promises');
       const { simpleGit } = await import('simple-git');
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
+      const exportDir = nodePath.resolve(nodePath.join((await import('os')).tmpdir(), 'workspace_export'), sanitize(project.name));
       
       await fs.mkdir(exportDir, { recursive: true });
       const git = simpleGit(exportDir);
@@ -538,7 +536,7 @@ async function startServer() {
       const fs = await import('fs/promises');
       const { simpleGit } = await import('simple-git');
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
+      const exportDir = nodePath.resolve(nodePath.join((await import('os')).tmpdir(), 'workspace_export'), sanitize(project.name));
       
       try { await fs.access(exportDir); } catch { await fs.mkdir(exportDir, { recursive: true }); }
       const git = simpleGit(exportDir);
@@ -581,7 +579,7 @@ async function startServer() {
       
       // Determine export dir: projects_export/<project_name_sanitized>
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
+      const exportDir = nodePath.resolve(nodePath.join((await import('os')).tmpdir(), 'workspace_export'), sanitize(project.name));
       
       await fs.mkdir(exportDir, { recursive: true });
       
@@ -624,7 +622,7 @@ async function startServer() {
       const fs = await import('fs/promises');
       const nodePath = await import('path');
       const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), 'projects_export'), sanitize(project.name));
+      const exportDir = nodePath.resolve(nodePath.join((await import('os')).tmpdir(), 'workspace_export'), sanitize(project.name));
       const fullPath = nodePath.resolve(exportDir, filePath);
       
       // prevent directory traversal
@@ -649,7 +647,7 @@ async function startServer() {
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { GitMerge, FileText, FilePlus, FileMinus, X } from 'lucide-react';
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 interface GitCommitDialogProps {
   isOpen: boolean;

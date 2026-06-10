@@ -1,87 +1,27 @@
-import { motion, AnimatePresence } from 'motion/react';
-import { Download, Terminal, Settings2, Cpu, Play, CheckCircle2, FileCode2, ChevronRight, ChevronDown, Folder, FolderOpen, MessageSquare, GitMerge, Pencil, Trash2, FilePlus, FolderPlus, Type, X, MoreVertical, Link, Github, Activity, FileText, Upload, Box, Hash, GitPullRequest, Save } from 'lucide-react';
+import { Link, Box, FolderPlus, FilePlus, Upload } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import debounce from 'lodash.debounce';
-
-// Hook for polling
-function useInterval(callback: () => void, delay: number | null) {
-  const savedCallback = useRef(callback);
-  useEffect(() => { savedCallback.current = callback; }, [callback]);
-  useEffect(() => {
-    if (delay !== null) {
-      const id = setInterval(() => savedCallback.current(), delay);
-      return () => clearInterval(id);
-    }
-  }, [delay]);
-}
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels';
-import { OllamaChat } from './components/OllamaChat';
 import JSZip from 'jszip';
 import Editor from '@monaco-editor/react';
-import { PromptDialog } from './components/PromptDialog';
+
+import { useInterval } from './hooks/useInterval';
+import { useCustomDialogs } from './hooks/useCustomDialogs';
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels';
+import { OllamaChat } from './components/OllamaChat';
 import { GitCommitDialog } from './components/GitCommitDialog';
 import { MessageOverlay } from './components/MessageOverlay';
-import { GithubExportDialog } from './components/GithubExportDialog';
 import { DiffViewerModal } from './components/DiffViewerModal';
 import { GitDiffModal } from './components/GitDiffModal';
-import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
+import { WaveformViewerViewState } from './components/WaveformViewer';
 import { TestbenchDialog } from './components/TestbenchDialog';
-import { parseVCD } from './utils/vcdParser';
 import { defaultVerilogMake, defaultCppMake } from './utils/templates';
 import { parseVerilog } from './utils/verilogParser';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-
-class ErrorBoundary extends React.Component<{children: React.ReactNode, fallback?: (err: Error) => React.ReactNode}, {error: Error | null}> {
-  state = { error: null };
-  static getDerivedStateFromError(error: Error) { return { error }; }
-  render() {
-    if (this.state.error) return this.props.fallback ? this.props.fallback(this.state.error) : <div className="p-4 text-red-500 overflow-auto"><pre>{this.state.error.message}{'\n'}{this.state.error.stack}</pre></div>;
-    return this.props.children;
-  }
-}
-
-function MarkdownWrapper({ content }: { content: string }) {
-  return (
-    <div className="w-full h-full overflow-auto bg-[#1e1e1e] p-8">
-      <div className="max-w-4xl mx-auto prose prose-invert prose-emerald prose-headings:text-slate-200 prose-p:text-slate-300 prose-a:text-emerald-400 prose-code:text-emerald-300 prose-pre:bg-[#0d0d12] prose-pre:border prose-pre:border-white/10 prose-strong:text-slate-200">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {content}
-        </ReactMarkdown>
-      </div>
-    </div>
-  );
-}
-
-function VCDWrapper({ content, viewState, onViewStateChange }: { content: string, viewState?: WaveformViewerViewState, onViewStateChange?: (state: WaveformViewerViewState) => void }) {
-  const vcdData = useMemo(() => {
-    try {
-      return parseVCD(content);
-    } catch (e) {
-      console.error(e);
-      return null;
-    }
-  }, [content]);
-
-  if (!vcdData) {
-    return <div className="p-4 text-rose-400">Error parsing VCD file. The file may be corrupted or unsupported.</div>;
-  }
-  return (
-    <ErrorBoundary>
-      <WaveformViewer vcd={vcdData} viewState={viewState} onViewStateChange={onViewStateChange} />
-    </ErrorBoundary>
-  );
-}
-
-const initialFiles: Record<string, any> = {
-  readme: {
-    name: 'README.md',
-    path: 'README.md',
-    type: 'markdown',
-    content: `# Welcome to FPGA Web IDE\n\nThis is a clean workspace for standard FPGA development.\n\n## Dependencies Installation\nTo compile the Verilog project with the default Makefile, you will need to install the following packages on your system:\n\n\`\`\`bash\nsudo apt-get update\nsudo apt-get install iverilog verilator\n\`\`\`\n\nFor Intel Quartus projects, install Quartus Prime Lite.`
-  }
-};
+import { MarkdownWrapper } from './components/MarkdownWrapper';
+import { VCDWrapper } from './components/VCDWrapper';
+import { initialFiles } from './utils/initialFiles';
+import { BuildOutputPanel } from './components/BuildOutputPanel';
+import { TabsBar } from './components/TabsBar';
+import { ProjectTree, TreeNode } from './components/ProjectTree';
+import { Header } from './components/Header';
 
 export default function App() {
   const [filesData, setFilesData] = useState<Record<string, {name: string, path: string, type: string, content: string, is_link?: boolean, is_modified?: boolean}>>({});
@@ -89,6 +29,8 @@ export default function App() {
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
   const [fileUIStates, setFileUIStates] = useState<Record<string, { isTextMode?: boolean, vcd?: WaveformViewerViewState }>>({});
+  const { customPrompt, customConfirm, customMultiChoice, CustomDialogsRenderer } = useCustomDialogs();
+  
   const [gitStatus, setGitStatus] = useState<any>(null);
   const [activeProject, setActiveProject] = useState<string | null>(null);
 
@@ -123,9 +65,7 @@ export default function App() {
   const [lineJumpTarget, setLineJumpTarget] = useState<string | null>(null);
   const editorRef = React.useRef<any>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [isExportingGist, setIsExportingGist] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
-  const [githubToken, setGithubToken] = useState<string | null>(() => localStorage.getItem('github_token'));
 
   const [testbenchDialog, setTestbenchDialog] = useState<{
     isOpen: boolean;
@@ -133,51 +73,6 @@ export default function App() {
     filesToInclude: string[];
     tbName: string;
   }>({ isOpen: false, parentPath: '', filesToInclude: [], tbName: 'tb_module' });
-
-  const [promptDialog, setPromptDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    defaultValue: string;
-    onResolve: ((val: string | null) => void) | null;
-  }>({
-    isOpen: false,
-    title: '',
-    defaultValue: '',
-    onResolve: null
-  });
-
-  const [confirmDialog, setConfirmDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onResolve: ((val: boolean) => void) | null;
-  }>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onResolve: null
-  });
-
-  const [multiChoiceDialog, setMultiChoiceDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    choices: { label: string; value: string; variant?: 'primary' | 'danger' | 'secondary' }[];
-    onResolve: ((val: string | null) => void) | null;
-  }>({
-    isOpen: false,
-    title: '',
-    message: '',
-    choices: [],
-    onResolve: null
-  });
-
-  const [gistExportDialog, setGistExportDialog] = useState<{
-    isOpen: boolean;
-    logs: string[];
-    finalUrl: string | null;
-    error: string | null;
-  }>({ isOpen: false, logs: [], finalUrl: null, error: null });
 
   const [buildDialog, setBuildDialog] = useState<{
     isOpen: boolean;
@@ -212,44 +107,6 @@ export default function App() {
     }
   };
 
-  const customPrompt = (title: string, defaultValue: string = ''): Promise<string | null> => {
-    return new Promise((resolve) => {
-      setPromptDialog({
-        isOpen: true,
-        title,
-        defaultValue,
-        onResolve: resolve
-      });
-    });
-  };
-
-  const customConfirm = (title: string, message: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      setConfirmDialog({
-        isOpen: true,
-        title,
-        message,
-        onResolve: resolve
-      });
-    });
-  };
-
-  const customMultiChoice = (
-    title: string, 
-    message: string, 
-    choices: { label: string; value: string; variant?: 'primary' | 'danger' | 'secondary' }[]
-  ): Promise<string | null> => {
-    return new Promise((resolve) => {
-      setMultiChoiceDialog({
-        isOpen: true,
-        title,
-        message,
-        choices,
-        onResolve: resolve
-      });
-    });
-  };
-
   useEffect(() => {
     if (lineJumpTarget && editorRef.current) {
          setTimeout(() => { // wait for editor to apply model if active file just changed
@@ -275,9 +132,8 @@ export default function App() {
     minimap: { enabled: showMinimap },
     fontSize: 13,
     scrollBeyondLastLine: false,
-    wordWrap: 'on' as const,
-    smoothScrolling: true,
-    fastScrollSensitivity: 5,
+    wordWrap: 'off' as const,
+    smoothScrolling: false,
   }), [showMinimap]);
 
   const handleEditorBeforeMount = useCallback((monaco: any) => {
@@ -308,56 +164,6 @@ export default function App() {
       }));
     }
   }, [activeFile, setFilesData]);
-
-  const handleConnectGitHub = async () => {
-    try {
-      const redirectUri = `${window.location.origin}/auth/callback`;
-      const response = await fetch(`/api/auth/github/url?redirectUri=${encodeURIComponent(redirectUri)}`);
-      
-      if (!response.ok) {
-        const errData = await response.json().catch(() => null);
-        if (errData && errData.error && errData.error.includes('GITHUB_CLIENT_ID')) {
-           alert("GitHub OAuth is not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in the app environment, and set the callback URL to: " + redirectUri);
-           return;
-        }
-        throw new Error('Failed to get auth URL');
-      }
-      const { url } = await response.json();
-  
-      const authWindow = window.open(
-        url,
-        'oauth_popup',
-        'width=600,height=700'
-      );
-  
-      if (!authWindow) {
-        alert('Please allow popups for this site to connect your GitHub account.');
-      }
-    } catch (error) {
-      console.error('GitHub OAuth error:', error);
-      alert('Failed to initiate GitHub connect');
-    }
-  };
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      // Validate origin is from AI Studio preview or localhost
-      const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
-        return;
-      }
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        const token = event.data.token;
-        if (token) {
-          localStorage.setItem('github_token', token);
-          setGithubToken(token);
-          alert('GitHub account connected successfully!');
-        }
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
 
   const handleImportZip = () => {
     const input = document.createElement('input');
@@ -464,40 +270,6 @@ export default function App() {
     }
   };
 
-  const handleExportLocalGit = async () => {
-    setIsExportingGist(true);
-    setGistExportDialog({ isOpen: true, logs: ['Starting local git repository export process...'], finalUrl: null, error: null });
-    
-    const addLog = (log: string) => {
-      setGistExportDialog(prev => ({ ...prev, logs: [...prev.logs, log] }));
-    };
-
-    try {
-      addLog('Sending project data to local server export endpoint...');
-      const response = await fetch('/api/export/local', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: activeProject || 'default', commitMessage: 'Workspace export update' })
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || `Server returned ${response.status}`);
-      }
-      
-      addLog(`Success! Repository exported and committed to:`);
-      addLog(data.path);
-      
-      setGistExportDialog(prev => ({ ...prev, finalUrl: null })); // No HTTP URL for local folder
-    } catch (err: any) {
-      console.error('Local export failed:', err);
-      setGistExportDialog(prev => ({ ...prev, error: err.message || 'Export failed' }));
-    } finally {
-      setIsExportingGist(false);
-    }
-  };
-
   const handleRunMake = async () => {
     if (Object.values(filesData).some(f => f.is_modified)) {
       alert("Please save all modified files before running Make.");
@@ -579,8 +351,6 @@ export default function App() {
     }
   };
 
-  const debounceMap = useMemo(() => new Map<string, (...args: any[]) => void>(), []);
-  
   const saveFileDirect = useCallback((id: string, fileObj: any, projId: string) => {
       return fetch('/api/files', {
         method: 'POST',
@@ -705,16 +475,6 @@ export default function App() {
 
   const fileList = useMemo(() => Object.entries(filesData).map(([id, f]) => ({id, ...f})), [filesData]);
   
-  type TreeNode = {
-    name: string;
-    path: string;
-    type: 'file' | 'folder' | 'module' | 'wire_reg';
-    fileId?: string;
-    content?: string;
-    children: Record<string, TreeNode>;
-    is_link?: boolean;
-  };
-  
   const treeRoot = useMemo(() => {
     const root: Record<string, TreeNode> = {};
     fileList.forEach(f => {
@@ -772,226 +532,6 @@ export default function App() {
     });
     return root;
   }, [fileList]);
-
-  const renderTree = (nodes: Record<string, TreeNode>, depth: number = 0) => {
-    return Object.values(nodes)
-      .sort((a, b) => {
-        // Folders first, then files, then modules, then wires
-        const getWeight = (t: string) => t === 'folder' ? 0 : t === 'file' ? 1 : t === 'module' ? 2 : 3;
-        if (getWeight(a.type) !== getWeight(b.type)) return getWeight(a.type) - getWeight(b.type);
-        return a.name.localeCompare(b.name);
-      })
-      .map(node => {
-        const hasChildren = Object.keys(node.children).length > 0;
-        const isCollapsed = collapsedDirs[node.path] ?? (node.type !== 'folder');
-
-        if (node.type === 'folder') {
-          const isTestbenchFolder = node.children['Makefile'] !== undefined || node.name.startsWith('tb_') || node.name.endsWith('_tb');
-          return (
-            <div key={node.path}>
-              <div 
-                className={`flex items-center justify-between text-sm text-slate-200 py-1.5 font-medium group pr-2 cursor-pointer hover:bg-white/5 rounded`}
-                style={{ paddingLeft: `${depth * 16}px` }}
-              >
-                <div className="flex items-center gap-1.5" onClick={() => setCollapsedDirs(prev => ({ ...prev, [node.path]: !isCollapsed }))}>
-                  {isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-                  {isTestbenchFolder ? <Box className="w-4 h-4 text-emerald-400 fill-emerald-400/20" /> : <FolderOpen className="w-4 h-4 text-amber-400" />}
-                  <span className={isTestbenchFolder ? "text-emerald-300 font-semibold" : ""}>{node.name}</span>
-                </div>
-                <DropdownMenu.Root>
-                   <DropdownMenu.Trigger asChild>
-                      <button onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded p-1">
-                         <MoreVertical className="w-3.5 h-3.5 text-slate-400" />
-                      </button>
-                   </DropdownMenu.Trigger>
-                   <DropdownMenu.Portal>
-                      <DropdownMenu.Content align="end" sideOffset={2} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[140px] z-50">
-                         <DropdownMenu.Item 
-                           onClick={(e) => { 
-                              e.stopPropagation(); 
-                              customPrompt(`Enter new file name (in ${node.path}/):`, 'new_file.v').then(name => {
-                                if (name) handleAddFile(`${node.path}/${name}`, "// New file\n");
-                              });
-                           }} 
-                           className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
-                         >
-                             <FilePlus className="w-3 h-3" /> New File Here
-                         </DropdownMenu.Item>
-                         <DropdownMenu.Item 
-                           onClick={(e) => { 
-                              e.stopPropagation(); 
-                              customPrompt(`Enter new folder name (in ${node.path}/):`, 'new_folder').then(name => {
-                                if (name) {
-                                  const folderName = name.endsWith('/') ? name : name + '/';
-                                  handleAddFile(`${node.path}/${folderName}.gitkeep`, "");
-                                }
-                              });
-                           }} 
-                           className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
-                         >
-                             <FolderPlus className="w-3 h-3" /> New Folder Here
-                         </DropdownMenu.Item>
-                         <DropdownMenu.Item 
-                           onClick={(e) => { 
-                              e.stopPropagation(); 
-                              handleFileUploadMenu(node.path);
-                           }} 
-                           className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
-                         >
-                             <Upload className="w-3 h-3" /> Upload File(s)
-                         </DropdownMenu.Item>
-                         <DropdownMenu.Item 
-                           onClick={(e) => { 
-                              e.stopPropagation(); 
-                              customPrompt(`Enter link file name (in ${node.path}/):`, 'output.vcd').then(name => {
-                                if (name) handleAddFile(`${node.path}/${name}`, "Waiting for output...", activeProject || undefined, true);
-                              });
-                           }} 
-                           className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
-                         >
-                             <Link className="w-3 h-3" /> Add Link to File
-                         </DropdownMenu.Item>
-                         {node.path !== '' && (
-                         <DropdownMenu.Item 
-                           onClick={(e) => { 
-                              e.stopPropagation(); 
-                              handleRenameFolder(node.path);
-                           }} 
-                           className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2"
-                         >
-                             <Type className="w-3 h-3" /> Rename Folder
-                         </DropdownMenu.Item>
-                         )}
-                         <DropdownMenu.Separator className="h-px bg-white/5 my-1" />
-                         <DropdownMenu.Item 
-                           onClick={(e) => { 
-                              e.stopPropagation(); 
-                              setTestbenchDialog({ isOpen: true, parentPath: node.path === '' ? '' : node.path + '/', filesToInclude: [], tbName: 'tb_module' });
-                           }} 
-                           className="px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 cursor-pointer outline-none flex items-center gap-2"
-                         >
-                             <Box className="w-3 h-3" /> Create Testbench
-                         </DropdownMenu.Item>
-                      </DropdownMenu.Content>
-                   </DropdownMenu.Portal>
-                </DropdownMenu.Root>
-              </div>
-              {!isCollapsed && (
-                <div className="flex flex-col">
-                  {renderTree(node.children, depth + 1)}
-                </div>
-              )}
-            </div>
-          );
-        }
-
-        const isFile = node.type === 'file';
-        const isModule = node.type === 'module';
-        // Base indent for non-folders. if inside a file, depth increases
-        const pl = depth * 16 + (isFile ? 20 : 20);
-
-        const isModified = gitStatus?.status?.modified?.includes(node.path);
-        const isUntracked = gitStatus?.status?.not_added?.includes(node.path);
-        const isAdded = gitStatus?.status?.created?.includes(node.path) || gitStatus?.status?.staged?.includes(node.path);
-
-        let gitMarker = null;
-        if (isUntracked) gitMarker = <span className="text-[10px] text-emerald-500 font-bold ml-1" title="Untracked">U</span>;
-        else if (isAdded) gitMarker = <span className="text-[10px] text-emerald-400 font-bold ml-1" title="Added">A</span>;
-        else if (isModified) gitMarker = <span className="text-[10px] text-amber-500 font-bold ml-1" title="Modified">M</span>;
-
-        return (
-          <div key={node.path}>
-            <div 
-              onClick={() => { 
-                 if (node.fileId) {
-                    setActiveFile(node.fileId); 
-                    setOpenedTabs(p => p.includes(node.fileId!) ? p : [...p, node.fileId!]);
-                    
-                    if (isModule || node.type === 'wire_reg') {
-                       setLineJumpTarget(node.content || null);
-                    }
-                 }
-              }}
-              className={`group py-1 pr-1 flex items-center justify-between cursor-pointer transition-colors ${isFile && activeFile === node.fileId ? 'text-emerald-400 bg-emerald-500/10 rounded' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 rounded'}`}
-              style={{ paddingLeft: `${pl}px` }}
-            >
-               <div className="flex items-center gap-1.5 text-[13px] overflow-hidden min-w-0">
-                 {hasChildren && (
-                    <div className="shrink-0" onClick={(e) => { e.stopPropagation(); setCollapsedDirs(prev => ({ ...prev, [node.path]: !isCollapsed })); }}>
-                       {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
-                    </div>
-                 )}
-                 {!hasChildren && (
-                    <div className="w-3.5" />
-                 )}
-                 {isFile ? (
-                    node.is_link ? <Link className="w-3.5 h-3.5 shrink-0 text-emerald-400" /> : <FileCode2 className="w-3.5 h-3.5 shrink-0" />
-                 ) : isModule ? (
-                    <Box className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
-                 ) : (
-                    <Hash className="w-3.5 h-3.5 shrink-0 text-slate-500" />
-                 )}
-                 <span className={`truncate ${isModule ? 'text-indigo-300' : ''}`}>{node.name}</span>
-                 {gitMarker}
-               </div>
-               
-               <DropdownMenu.Root>
-                  <DropdownMenu.Trigger asChild>
-                     <button onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded p-1">
-                        <MoreVertical className="w-3.5 h-3.5" />
-                     </button>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
-                     <DropdownMenu.Content align="end" sideOffset={2} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[120px] z-50">
-                        <DropdownMenu.Item onClick={(e) => { 
-                          e.stopPropagation(); 
-                          setChatInputs((prev) => {
-                             const aid = activeFile || '_global';
-                             const current = prev[aid] || '';
-                             return { ...prev, [aid]: current + (current.endsWith(' ') || current === '' ? '' : ' ') + `{${node.path}}` };
-                          }); 
-                          setIsChatOpen(true); 
-                        }} className="px-3 py-1.5 text-xs text-indigo-300 hover:bg-indigo-500/10 hover:text-indigo-200 cursor-pointer outline-none flex items-center gap-2">
-                            <Link className="w-3 h-3" /> Reference
-                        </DropdownMenu.Item>
-                        {node.fileId && (
-                        <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleRenameFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2">
-                            <Type className="w-3 h-3" /> Rename
-                        </DropdownMenu.Item>
-                        )}
-                        {node.fileId && (
-                        <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleDeleteFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 cursor-pointer outline-none flex items-center gap-2">
-                            <Trash2 className="w-3 h-3" /> Delete
-                        </DropdownMenu.Item>
-                        )}
-                        {gitStatus?.isRepo && isFile && (
-                           <>
-                             <DropdownMenu.Separator className="h-px bg-white/5 my-1" />
-                             {(isUntracked || isModified) && (
-                               <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleGitAction('add', node.path); }} className="px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 cursor-pointer outline-none flex items-center gap-2">
-                                   <FilePlus className="w-3 h-3" /> Git Add
-                               </DropdownMenu.Item>
-                             )}
-                             {!isUntracked && (
-                               <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleGitAction('rm', node.path); }} className="px-3 py-1.5 text-xs text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 cursor-pointer outline-none flex items-center gap-2">
-                                   <Trash2 className="w-3 h-3" /> Git Rm/Restore
-                               </DropdownMenu.Item>
-                             )}
-                           </>
-                        )}
-                     </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-               </DropdownMenu.Root>
-            </div>
-            {hasChildren && !isCollapsed && (
-               <div className="flex flex-col">
-                 {renderTree(node.children, depth + 1)}
-               </div>
-            )}
-          </div>
-        );
-      });
-  };
 
   const handleEditTemplate = async (type: 'v' | 'cpp') => {
       const ext = type === 'v' ? 'v' : 'cpp';
@@ -1346,174 +886,33 @@ int main(int argc, char** argv) {
   return (
     <div className="h-screen flex flex-col font-sans">
       {/* Header */}
-      <header className="border-b border-white/10 bg-[#121214] px-6 py-4 flex items-center justify-between z-10 relative">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-3">
-            <div className="bg-emerald-500/20 p-2 rounded-lg border border-emerald-500/30">
-              <Cpu className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <h1 className="text-sm font-semibold text-white">Smart Workspace</h1>
-              <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-                <span className="flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  Connected
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="h-8 w-px bg-white/10 mx-2 hidden sm:block"></div>
-          
-          <div className="flex items-center gap-3">
-             <div className="relative">
-                <select 
-                  value={activeProject || ''} 
-                  onChange={e => setActiveProject(e.target.value)}
-                  className="appearance-none bg-[#1e1e1e] border border-white/10 text-sm text-slate-300 py-1.5 pl-3 pr-8 rounded focus:outline-none focus:border-emerald-500/50 cursor-pointer"
-                >
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                   <ChevronRight className="w-3 h-3 rotate-90" />
-                </div>
-             </div>
-             
-             <button onClick={createNewProject} className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-colors cursor-pointer">
-               <FilePlus className="w-3.5 h-3.5" />
-               New
-             </button>
-             
-             <div className="h-4 w-px bg-white/10 mx-1"></div>
-
-             <button onClick={() => saveFile(activeFile)} disabled={!activeFile || !filesData[activeFile]?.is_modified} className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-colors ${!activeFile || !filesData[activeFile]?.is_modified ? 'text-slate-500 bg-white/5 cursor-not-allowed border border-white/5' : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 cursor-pointer'}`}>
-               <Save className="w-3.5 h-3.5" />
-               Save
-               <span className="text-[10px] opacity-60 ml-1">Ctrl+S</span>
-             </button>
-             
-             <button onClick={saveAllFiles} disabled={!Object.values(filesData).some(f => f.is_modified)} className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-colors ${!Object.values(filesData).some(f => f.is_modified) ? 'text-slate-500 bg-white/5 cursor-not-allowed border border-white/5' : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 cursor-pointer'}`}>
-               <Save className="w-3.5 h-3.5" />
-               Save All
-             </button>
-          </div>
-        </div>
-        
-        <div className="flex gap-3">
-          <button 
-            onClick={() => setIsChatOpen(!isChatOpen)}
-            className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors ${
-              isChatOpen 
-                ? 'bg-indigo-500 text-white' 
-                : 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 hover:bg-indigo-500/20'
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            AI Assistant
-          </button>
-          
-          {activeFile && (['vcd', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || filesData[activeFile]?.name?.endsWith('.md')) && (
-             <button 
-                onClick={() => updateFileUI(activeFile, s => ({ ...s, isTextMode: !s.isTextMode }))}
-                className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-emerald-400 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
-             >
-                {fileUIStates[activeFile]?.isTextMode ? <Activity className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
-                {fileUIStates[activeFile]?.isTextMode ? (['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'Show Waveform' : 'Show Render') : 'Show Text'}
-             </button>
-          )}
-
-          <button 
-            onClick={handleImportZip}
-            className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-slate-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            Import ZIP
-          </button>
-          
-          <button 
-            onClick={handleExportZip}
-            disabled={isExporting}
-            className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-slate-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Download className="w-3.5 h-3.5" />
-            {isExporting ? 'Exporting...' : 'Export to ZIP'}
-          </button>
-          {!gitStatus?.isRepo ? (
-            <button 
-              onClick={() => handleGitAction('init')}
-              className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <Github className="w-3.5 h-3.5" />
-              Init Git Repo
-            </button>
-          ) : (
-            <>
-              <button 
-                onClick={() => handleGitAction('add', '.')}
-                className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
-              >
-                <FilePlus className="w-3.5 h-3.5" />
-                Git Add All
-              </button>
-              <button 
-                onClick={() => {
-                  setGitCommitDialogState(true);
-                }}
-                className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
-              >
-                <GitMerge className="w-3.5 h-3.5" />
-                Git Commit
-              </button>
-            </>
-          )}
-          
-          <button 
-            onClick={handleRunMake}
-            disabled={isBuildingLocal}
-            className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Play className="w-3.5 h-3.5" />
-            {isBuildingLocal ? 'Building...' : 'Run Make'}
-          </button>
-          
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <button className="bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-slate-300 p-1.5 rounded-md transition-colors outline-none hidden sm:flex items-center justify-center cursor-pointer">
-                <Settings2 className="w-4 h-4" />
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content align="end" sideOffset={8} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[140px] z-50">
-                <DropdownMenu.Label className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Editor Theme</DropdownMenu.Label>
-                <DropdownMenu.Item onClick={() => setEditorTheme('vs-dark')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'vs-dark' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
-                  vs-dark
-                </DropdownMenu.Item>
-                <DropdownMenu.Item onClick={() => setEditorTheme('light')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'light' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
-                  light
-                </DropdownMenu.Item>
-                <DropdownMenu.Item onClick={() => setEditorTheme('hc-black')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'hc-black' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
-                  hc-black
-                </DropdownMenu.Item>
-                <DropdownMenu.Separator className="h-px bg-white/10 my-1" />
-                <DropdownMenu.Item onClick={() => setShowMinimap(p => !p)} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center justify-between text-slate-300 hover:bg-white/5 hover:text-white">
-                  <span>Show Minimap</span>
-                  {showMinimap && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
-                </DropdownMenu.Item>
-                <DropdownMenu.Separator className="h-px bg-white/10 my-1" />
-                <DropdownMenu.Label className="px-3 py-2 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase">Makefile Templates</DropdownMenu.Label>
-                <DropdownMenu.Item onClick={() => handleEditTemplate('v')} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center justify-between text-slate-300 hover:bg-white/5 hover:text-white">
-                  <span>Edit Verilog Template</span>
-                </DropdownMenu.Item>
-                <DropdownMenu.Item onClick={() => handleEditTemplate('cpp')} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center justify-between text-slate-300 hover:bg-white/5 hover:text-white">
-                  <span>Edit C/C++ Template</span>
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        </div>
-      </header>
+      <Header 
+        activeProject={activeProject}
+        setActiveProject={setActiveProject}
+        projects={projects}
+        createNewProject={createNewProject}
+        activeFile={activeFile}
+        filesData={filesData}
+        saveFile={saveFile}
+        saveAllFiles={saveAllFiles}
+        isChatOpen={isChatOpen}
+        setIsChatOpen={setIsChatOpen}
+        updateFileUI={updateFileUI}
+        fileUIStates={fileUIStates}
+        handleImportZip={handleImportZip}
+        handleExportZip={handleExportZip}
+        isExporting={isExporting}
+        gitStatus={gitStatus}
+        handleGitAction={handleGitAction}
+        setGitCommitDialogState={setGitCommitDialogState}
+        handleRunMake={handleRunMake}
+        isBuildingLocal={isBuildingLocal}
+        editorTheme={editorTheme}
+        setEditorTheme={setEditorTheme}
+        showMinimap={showMinimap}
+        setShowMinimap={setShowMinimap}
+        handleEditTemplate={handleEditTemplate}
+      />
 
       {/* Main Content */}
       <div className="flex-1 w-full overflow-hidden">
@@ -1548,65 +947,22 @@ int main(int argc, char** argv) {
           <Panel id="editor" defaultSize={isChatOpen ? 55 : 80} minSize={30} className="flex flex-col min-w-0 bg-[#1e1e1e]">
             <PanelGroup orientation="vertical" id="workspace-vertical-v5">
               <Panel id="editor-main" defaultSize={buildDialog.isOpen ? 70 : 100} className="flex flex-col relative min-h-0">
-                <div className="flex bg-[#121214] border-b border-black/50 shrink-0 justify-between items-center min-w-0">
-                  <div className="flex overflow-x-auto no-scrollbar flex-1 items-center" ref={tabsContainerRef}>
-                    {openedTabs.map(id => (
-                      <div 
-                        key={id} 
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, id)}
-                        onDragOver={(e) => handleDragOver(e, id)}
-                        onDragEnd={handleDragEnd}
-                        onDrop={(e) => handleDrop(e, id)}
-                        onClick={() => setActiveFile(id)} 
-                        className={`flex items-center gap-2 px-4 py-2 border-r border-white/5 cursor-pointer text-sm shrink-0 transition-colors ${activeFile === id ? 'bg-[#1e1e1e] text-slate-200 border-t border-t-emerald-500' : 'bg-[#16161a] text-slate-500 hover:text-slate-300 border-t border-transparent'} ${dragOverTab === id ? 'border-l-2 border-l-emerald-500' : ''} ${draggedTab === id ? 'opacity-50' : ''}`}
-                      >
-                        <FileCode2 className="w-3 h-3" />
-                        <span>{filesData[id]?.name}{filesData[id]?.is_modified && <span className="text-emerald-400 font-bold ml-1">•</span>}</span>
-                        <button onClick={(e) => closeTab(e, id)} className="hover:bg-white/10 rounded-md p-0.5 ml-1 transition-colors"><X className="w-3 h-3" /></button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="shrink-0 flex items-center pr-4 pl-2 bg-[#121214] z-10 shadow-[-10px_0_15px_rgba(18,18,20,1)] relative gap-2 border-l border-white/5 h-full py-1">
-                      <DropdownMenu.Root>
-                        <DropdownMenu.Trigger asChild>
-                          <button 
-                            disabled={!tabsOverflowing}
-                            className={`p-1 rounded transition-colors flex items-center ${tabsOverflowing ? 'text-slate-300 hover:text-white hover:bg-white/10' : 'text-slate-600 cursor-not-allowed opacity-50'}`}
-                            title="Overflowing Tabs"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
-                        </DropdownMenu.Trigger>
-                        <DropdownMenu.Portal>
-                          <DropdownMenu.Content align="end" className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[200px] z-[120] max-h-[300px] overflow-y-auto">
-                            {openedTabs.map(id => (
-                              <DropdownMenu.Item 
-                                key={id}
-                                onClick={() => setActiveFile(id)}
-                                className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center justify-between gap-2 ${activeFile === id ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}
-                              >
-                                <div className="flex items-center gap-2 truncate">
-                                  <FileCode2 className="w-3 h-3 shrink-0" />
-                                  <span className="truncate">{filesData[id]?.name}{filesData[id]?.is_modified && <span className="text-emerald-400 font-bold ml-1">•</span>}</span>
-                                </div>
-                                <button onClick={(e) => closeTab(e, id)} className="hover:bg-white/10 rounded-md p-1 ml-2 transition-colors shrink-0 text-slate-500 hover:text-red-400"><X className="w-3 h-3" /></button>
-                              </DropdownMenu.Item>
-                            ))}
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Portal>
-                      </DropdownMenu.Root>
-                    {activeFile && !filesData[activeFile]?.is_link && (
-                      <button 
-                        onClick={() => fetchGitDiffForActiveFile()}
-                        className="text-xs flex items-center gap-2 text-slate-400 hover:text-white px-2 py-1 rounded bg-white/5 hover:bg-white/10 transition-colors shrink-0 whitespace-nowrap"
-                      >
-                        <GitPullRequest className="w-3.5 h-3.5" />
-                        View Git Diff
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <TabsBar
+                  openedTabs={openedTabs}
+                  activeFile={activeFile}
+                  filesData={filesData}
+                  tabsContainerRef={tabsContainerRef}
+                  tabsOverflowing={tabsOverflowing}
+                  draggedTab={draggedTab}
+                  dragOverTab={dragOverTab}
+                  handleDragStart={handleDragStart}
+                  handleDragOver={handleDragOver}
+                  handleDragEnd={handleDragEnd}
+                  handleDrop={handleDrop}
+                  setActiveFile={setActiveFile}
+                  closeTab={closeTab}
+                  fetchGitDiffForActiveFile={fetchGitDiffForActiveFile}
+                />
           <div className="flex-1 overflow-hidden relative">
             {activeFile ? (
               ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && !fileUIStates[activeFile]?.isTextMode ? (
@@ -1621,7 +977,6 @@ int main(int argc, char** argv) {
               ) : (['markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').endsWith('.md')) && !fileUIStates[activeFile]?.isTextMode ? (
                 <MarkdownWrapper content={filesData[activeFile]?.content || ''} />
               ) : (
-              <div className="absolute inset-0 z-0" style={{ transform: 'translateZ(0)' }}>
                 <Editor
                   height="100%"
                   theme={editorTheme}
@@ -1645,7 +1000,6 @@ int main(int argc, char** argv) {
                   onChange={handleEditorChange}
                   options={editorOptions}
                 />
-              </div>
               )
             ) : (
               <div className="flex items-center justify-center h-full text-slate-600 text-sm">Select a file to edit</div>
@@ -1653,88 +1007,18 @@ int main(int argc, char** argv) {
           </div>
         </Panel>
 
-          {buildDialog.isOpen && (
-            <>
-              <PanelResizeHandle className="h-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-row-resize z-50 relative" />
-              <Panel id="build-output" defaultSize={30} minSize={10} className="bg-[#0a0a0c] flex flex-col border-t border-white/10 relative">
-                 <div className="flex items-center justify-between p-2 pt-1 border-b border-white/5 bg-[#121214] shrink-0">
-                   <div className="text-xs font-semibold text-slate-400 flex items-center gap-2">
-                     <Terminal className="w-3.5 h-3.5" /> Make Output
-                   </div>
-                   <button onClick={() => setBuildDialog(p => ({...p, isOpen: false}))} className="text-slate-500 hover:text-white p-1 outline-none">
-                     <X className="w-3.5 h-3.5" />
-                   </button>
-                 </div>
-                  <div className="p-3 overflow-y-auto font-mono text-[12px] text-slate-300 leading-relaxed whitespace-pre flex-1">
-                  {buildDialog.logs.map((log, i) => {
-                    // Match: file.v:10: message OR file.v(10) message OR %Error: file.v:10: message
-                    const errorMatch = log.match(/([a-zA-Z0-9_.\-\/\\]+\.[a-zA-Z0-9]+)(?::|\()(\d+)(?::|\))?\s*(.+)/);
-                    let clickable = null;
-                    if (errorMatch) {
-                      const file = errorMatch[1];
-                      const line = parseInt(errorMatch[2], 10);
-                      const msg = errorMatch[3];
-                      
-                      const isError = log.toLowerCase().includes('error');
-                      const isWarning = log.toLowerCase().includes('warning');
-                      const textColor = isError ? 'text-red-400 hover:text-red-300' : isWarning ? 'text-yellow-400 hover:text-yellow-300' : 'text-slate-300 hover:text-white';
-                      
-                      // split log to highlight just the error part
-                      const matchIndex = log.indexOf(errorMatch[0]);
-                      const prefix = log.substring(0, matchIndex);
-                      
-                      clickable = (
-                        <span>
-                          {prefix}
-                          <span 
-                            className={`${textColor} hover:underline cursor-pointer`}
-                            onClick={() => {
-                              // Find file by name
-                              const fileName = file.split(/[/\\]/).pop() || file;
-                              const foundId = Object.keys(filesData).find(id => filesData[id].path.endsWith(fileName));
-                              if (foundId) {
-                                 setActiveFile(foundId);
-                                 if (!openedTabs.includes(foundId)) {
-                                   setOpenedTabs(p => [...p, foundId]);
-                                 }
-                                 // jump to line
-                                 setTimeout(() => {
-                                   if (editorRef.current) {
-                                      editorRef.current.revealLineInCenter(line);
-                                      editorRef.current.setPosition({ lineNumber: line, column: 1 });
-                                      editorRef.current.focus();
-                                   }
-                                 }, 100);
-                              }
-                            }}
-                          >
-                            {file}:{line} {msg}
-                          </span>
-                        </span>
-                      );
-                    }
-                    return (
-                      <div key={i} className="mb-0.5">
-                        <span className="text-emerald-500/30 mr-3 border-r border-slate-700/50 pr-3 select-none inline-block w-[30px] text-right">
-                          {i + 1}
-                        </span>
-                        {clickable || log}
-                      </div>
-                    );
-                  })}
-                  {buildDialog.error && (
-                    <div className="mt-2 text-red-400">{buildDialog.error}</div>
-                  )}
-                  {isBuildingLocal && (
-                     <div className="mt-2 text-slate-500 flex items-center gap-2 animate-pulse">
-                        <Terminal className="w-3 h-3 text-emerald-500/50" />
-                        Running...
-                     </div>
-                  )}
-                 </div>
-              </Panel>
-            </>
-          )}
+          <BuildOutputPanel
+            isOpen={buildDialog.isOpen}
+            logs={buildDialog.logs}
+            error={buildDialog.error}
+            isBuildingLocal={isBuildingLocal}
+            onClose={() => setBuildDialog(p => ({...p, isOpen: false}))}
+            filesData={filesData}
+            setActiveFile={setActiveFile}
+            openedTabs={openedTabs}
+            setOpenedTabs={setOpenedTabs}
+            editorRef={editorRef}
+          />
 
             </PanelGroup>
           </Panel>
@@ -1775,7 +1059,27 @@ int main(int argc, char** argv) {
                  </div>
                </div>
               <div className="space-y-1">
-                {renderTree(treeRoot)}
+                <ProjectTree 
+                  treeRoot={treeRoot}
+                  collapsedDirs={collapsedDirs}
+                  setCollapsedDirs={setCollapsedDirs}
+                  customPrompt={customPrompt}
+                  handleAddFile={handleAddFile}
+                  setTestbenchDialog={setTestbenchDialog}
+                  handleFileUploadMenu={handleFileUploadMenu}
+                  activeProject={activeProject}
+                  handleRenameFolder={handleRenameFolder}
+                  handleDeleteFile={handleDeleteFile}
+                  handleRenameFile={handleRenameFile}
+                  setActiveFile={setActiveFile}
+                  activeFile={activeFile}
+                  setOpenedTabs={setOpenedTabs}
+                  gitStatus={gitStatus}
+                  setLineJumpTarget={setLineJumpTarget}
+                  setChatInputs={setChatInputs}
+                  setIsChatOpen={setIsChatOpen}
+                  handleGitAction={handleGitAction}
+                />
               </div>
             </div>
           </Panel>
@@ -1793,7 +1097,6 @@ int main(int argc, char** argv) {
         isOpen={testbenchDialog.isOpen}
         onClose={() => setTestbenchDialog(p => ({ ...p, isOpen: false }))}
         filesData={filesData}
-        parentPath={testbenchDialog.parentPath}
         onCreate={handleCreateTestbench}
       />
       
@@ -1819,69 +1122,8 @@ int main(int argc, char** argv) {
         type={gitMessageContent?.toString().startsWith('Error') ? 'error' : 'success'}
         onClose={() => setGitMessageOpen(false)}
       />
-      <PromptDialog 
-        isOpen={promptDialog.isOpen}
-        title={promptDialog.title}
-        defaultValue={promptDialog.defaultValue}
-        onResolve={(val) => promptDialog.onResolve?.(val)}
-        onClose={() => setPromptDialog(p => ({...p, isOpen: false}))}
-      />
 
-      {confirmDialog.isOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#1e1e24] border border-[#27272a] shadow-2xl rounded-xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
-            <h2 className="text-lg font-semibold text-white mb-2">{confirmDialog.title}</h2>
-            <p className="text-sm text-slate-400 mb-6 whitespace-pre-wrap">{confirmDialog.message}</p>
-            <div className="flex justify-end gap-3">
-              <button 
-                onClick={() => {
-                   confirmDialog.onResolve?.(false);
-                   setConfirmDialog(p => ({...p, isOpen: false}));
-                }}
-                className="px-4 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={() => {
-                   confirmDialog.onResolve?.(true);
-                   setConfirmDialog(p => ({...p, isOpen: false}));
-                }}
-                className="px-4 py-2 text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-white rounded transition-colors shadow-lg shadow-emerald-500/20"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {multiChoiceDialog.isOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#1e1e24] border border-[#27272a] shadow-2xl rounded-xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
-            <h2 className="text-lg font-semibold text-white mb-2">{multiChoiceDialog.title}</h2>
-            <p className="text-sm text-slate-400 mb-6 whitespace-pre-wrap">{multiChoiceDialog.message}</p>
-            <div className="flex flex-col gap-3">
-              {multiChoiceDialog.choices.map((choice) => (
-                <button
-                  key={choice.value}
-                  onClick={() => {
-                     multiChoiceDialog.onResolve?.(choice.value);
-                     setMultiChoiceDialog(p => ({...p, isOpen: false}));
-                  }}
-                  className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
-                    choice.variant === 'primary' ? 'bg-indigo-500 hover:bg-indigo-400 text-white shadow-lg shadow-indigo-500/20' :
-                    choice.variant === 'danger' ? 'bg-red-500/20 hover:bg-red-500/30 text-red-500 hover:text-red-400 border border-red-500/30' :
-                    'text-slate-300 hover:bg-white/5 border border-transparent'
-                  }`}
-                >
-                  {choice.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <CustomDialogsRenderer />
       
       {fileToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -1910,15 +1152,6 @@ int main(int argc, char** argv) {
           </div>
         </div>
       )}
-
-      <GithubExportDialog 
-        isOpen={gistExportDialog.isOpen}
-        logs={gistExportDialog.logs}
-        finalUrl={gistExportDialog.finalUrl}
-        error={gistExportDialog.error}
-        isProcessing={isExportingGist}
-        onClose={() => setGistExportDialog(prev => ({...prev, isOpen: false}))}
-      />
     </div>
   );
 }
