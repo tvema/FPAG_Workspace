@@ -28,6 +28,7 @@ import { GitDiffModal } from './components/GitDiffModal';
 import { WaveformViewer, WaveformViewerViewState } from './components/WaveformViewer';
 import { TestbenchDialog } from './components/TestbenchDialog';
 import { parseVCD } from './utils/vcdParser';
+import { defaultVerilogMake, defaultCppMake } from './utils/templates';
 import { parseVerilog } from './utils/verilogParser';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -925,6 +926,22 @@ export default function App() {
       });
   };
 
+  const handleEditTemplate = async (type: 'v' | 'cpp') => {
+      const ext = type === 'v' ? 'v' : 'cpp';
+      const path = `templates/Makefile.${ext}.template`;
+      const defaultContent = type === 'v' ? defaultVerilogMake : defaultCppMake;
+      
+      const existingFileId = Object.keys(filesData).find(key => filesData[key].path === path);
+      if (!existingFileId) {
+          await handleAddFile(path, defaultContent);
+      } else {
+          if (!openedTabs.includes(existingFileId)) {
+              setOpenedTabs(prev => [...prev, existingFileId]);
+          }
+          setActiveFile(existingFileId);
+      }
+  };
+
   const handleAddFile = async (path: string, content: string, projId?: string, is_link?: boolean, openTab: boolean = true) => {
       const targetProj = projId || activeProject;
       const id = `${targetProj}_${path.replace(/[^a-zA-Z0-9]/g, '_')}`;
@@ -1398,6 +1415,14 @@ int main(int argc, char** argv) {
                   <span>Show Minimap</span>
                   {showMinimap && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
                 </DropdownMenu.Item>
+                <DropdownMenu.Separator className="h-px bg-white/10 my-1" />
+                <DropdownMenu.Label className="px-3 py-2 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase">Makefile Templates</DropdownMenu.Label>
+                <DropdownMenu.Item onClick={() => handleEditTemplate('v')} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center justify-between text-slate-300 hover:bg-white/5 hover:text-white">
+                  <span>Edit Verilog Template</span>
+                </DropdownMenu.Item>
+                <DropdownMenu.Item onClick={() => handleEditTemplate('cpp')} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center justify-between text-slate-300 hover:bg-white/5 hover:text-white">
+                  <span>Edit C/C++ Template</span>
+                </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
@@ -1517,7 +1542,7 @@ int main(int argc, char** argv) {
                 language={
                   ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :
                   ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'tcl' :
-                  ['makefile', 'mak', 'mk'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').toLowerCase() === 'makefile' ? 'makefile' :
+                  ['makefile', 'mak', 'mk', 'template'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').toLowerCase() === 'makefile' || (filesData[activeFile]?.name || '').toLowerCase().includes('makefile') ? 'makefile' :
                   ['c', 'h'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'c' :
                   ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'cpp' :
                   ['ts', 'tsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'typescript' :

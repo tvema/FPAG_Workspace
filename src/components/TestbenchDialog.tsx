@@ -1,48 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check } from 'lucide-react';
-
-const defaultVerilogMake = `VERILATOR=verilator
-IVERILOG=iverilog
-VVP=vvp
-
-# Target executable
-TARGET = {{tbName}}.vvp
-
-# Source files
-SOURCES = {{files}} {{tbName}}.v
-
-all: run
-
-build:
-\t$(IVERILOG) -o $(TARGET) $(SOURCES)
-
-run: build
-\t$(VVP) $(TARGET)
-
-clean:
-\trm -f $(TARGET) *.vcd
-`;
-
-const defaultCppMake = `VERILATOR=verilator
-
-# Target executable
-TARGET = V{{tbName}}
-
-# Source files
-SOURCES = {{files}}
-
-all: run
-
-build:
-\t$(VERILATOR) -Wall --cc $(SOURCES) --exe {{tbName}}.cpp
-\tmake -j -C obj_dir -f V{{tbName}}.mk V{{tbName}}
-
-run: build
-\t./obj_dir/V{{tbName}}
-
-clean:
-\trm -rf obj_dir
-`;
+import { defaultVerilogMake, defaultCppMake } from '../utils/templates';
 
 export function TestbenchDialog({
   isOpen,
@@ -60,7 +18,14 @@ export function TestbenchDialog({
   const [tbName, setTbName] = useState('tb_module');
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [tbExt, setTbExt] = useState('.v');
-  const [makefileTemplate, setMakefileTemplate] = useState(defaultVerilogMake);
+  
+  const getTemplate = (ext: string) => {
+    const customTemplate = Object.values(filesData).find((f: any) => f.path === (ext === '.v' ? 'templates/Makefile.v.template' : 'templates/Makefile.cpp.template'));
+    if (customTemplate) return customTemplate.content;
+    return ext === '.v' ? defaultVerilogMake : defaultCppMake;
+  };
+
+  const [makefileTemplate, setMakefileTemplate] = useState(getTemplate('.v'));
 
   // Reset when opened
   useEffect(() => {
@@ -68,9 +33,9 @@ export function TestbenchDialog({
       setTbName('tb_module');
       setSelectedFiles(new Set());
       setTbExt('.v');
-      setMakefileTemplate(defaultVerilogMake);
+      setMakefileTemplate(getTemplate('.v'));
     }
-  }, [isOpen]);
+  }, [isOpen, filesData]);
 
   if (!isOpen) return null;
 
@@ -117,7 +82,7 @@ export function TestbenchDialog({
                 <button 
                   onClick={() => {
                      setTbExt('.v');
-                     setMakefileTemplate(defaultVerilogMake);
+                     setMakefileTemplate(getTemplate('.v'));
                   }}
                   className={`flex-1 py-2 text-xs font-medium rounded-md border transition-colors ${tbExt === '.v' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300' : 'bg-black/40 border-white/10 text-slate-400 hover:border-white/20'}`}
                 >
@@ -126,7 +91,7 @@ export function TestbenchDialog({
                 <button 
                   onClick={() => {
                      setTbExt('.cpp');
-                     setMakefileTemplate(defaultCppMake);
+                     setMakefileTemplate(getTemplate('.cpp'));
                   }}
                   className={`flex-1 py-2 text-xs font-medium rounded-md border transition-colors ${tbExt === '.cpp' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300' : 'bg-black/40 border-white/10 text-slate-400 hover:border-white/20'}`}
                 >
