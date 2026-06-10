@@ -135,7 +135,9 @@ async function startServer() {
   // Save or update file
   app.post("/api/files", async (req, res) => {
     try {
-      const { id, name, path, type, content, project_id = 'default', is_link = 0 } = req.body;
+      const { id, name, path, type, content, project_id = 'default' } = req.body;
+      const reqIsLink = req.body.is_link;
+      const is_link = reqIsLink === true || reqIsLink === 1 || reqIsLink === 'true' || reqIsLink === '1' ? 1 : 0;
       db.prepare(`
         INSERT INTO files (id, name, path, type, content, project_id, is_link) 
         VALUES (?, ?, ?, ?, ?, ?, ?) 

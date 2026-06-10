@@ -608,6 +608,7 @@ export default function App() {
       .then(data => {
         if (data && data.length > 0) {
           const parsed = data.reduce((acc: any, f: any) => {
+            f.is_link = Boolean(f.is_link);
             acc[f.id] = f;
             return acc;
           }, {});

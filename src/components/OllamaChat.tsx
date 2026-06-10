@@ -70,7 +70,19 @@ function MessageContent({ content, onAddFile, onProposeMerge }: { content: strin
 }
 
 export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any> }) {
-  const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>({});
+  const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>(() => {
+    try {
+      const stored = localStorage.getItem('ai_chat_history');
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.error("Failed to parse ai chat history", e);
+    }
+    return {};
+  });
+
+  useEffect(() => {
+    localStorage.setItem('ai_chat_history', JSON.stringify(messagesMap));
+  }, [messagesMap]);
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
   const [errorMap, setErrorMap] = useState<Record<string, string | null>>({});
 
