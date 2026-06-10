@@ -665,7 +665,7 @@ export default function App() {
       .catch(err => console.error('Failed to load files from server', err));
   }, [activeProject]);
 
-  const fileList = Object.entries(filesData).map(([id, f]) => ({id, ...f}));
+  const fileList = useMemo(() => Object.entries(filesData).map(([id, f]) => ({id, ...f})), [filesData]);
   
   type TreeNode = {
     name: string;
@@ -677,60 +677,63 @@ export default function App() {
     is_link?: boolean;
   };
   
-  const treeRoot: Record<string, TreeNode> = {};
-  fileList.forEach(f => {
-      const parts = f.path.split('/');
-      let currentLevel = treeRoot;
-      for (let i = 0; i < parts.length; i++) {
-          const part = parts[i];
-          const isFile = i === parts.length - 1;
-          const currentPath = parts.slice(0, i + 1).join('/');
-          
-          if (isFile) {
-             const fileNode: TreeNode = { name: part, path: currentPath, type: 'file', fileId: f.id, is_link: f.is_link, children: {} };
-             currentLevel[part] = fileNode;
-             
-             // If it's a Verilog file, parse and add module nodes
-             if (part.endsWith('.v') || part.endsWith('.sv')) {
-                try {
-                    const modules = parseVerilog(f.content);
-                    modules.forEach(mod => {
-                        const modName = mod.name;
-                        const modPath = `${currentPath}:${modName}`;
-                        const modNode: TreeNode = { 
-                            name: modName, 
-                            path: modPath, 
-                            type: 'module', 
-                            content: mod.header,
-                            fileId: f.id,
-                            children: {} 
-                        };
-                        
-                        mod.signals.forEach(sig => {
-                            modNode.children[sig.name] = {
-                                name: sig.name,
-                                path: `${modPath}:${sig.name}`,
-                                type: 'wire_reg',
-                                content: sig.declaration,
-                                fileId: f.id,
-                                children: {}
-                            };
-                        });
-                        
-                        fileNode.children[modName] = modNode;
-                    });
-                } catch (e) {
-                    console.error("Failed to parse Verilog file for modules:", f.path);
-                }
-             }
-          } else {
-             if (!currentLevel[part]) {
-                currentLevel[part] = { name: part, path: currentPath, type: 'folder', children: {} };
-             }
-             currentLevel = currentLevel[part].children;
-          }
-      }
-  });
+  const treeRoot = useMemo(() => {
+    const root: Record<string, TreeNode> = {};
+    fileList.forEach(f => {
+        const parts = f.path.split('/');
+        let currentLevel = root;
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            const isFile = i === parts.length - 1;
+            const currentPath = parts.slice(0, i + 1).join('/');
+            
+            if (isFile) {
+               const fileNode: TreeNode = { name: part, path: currentPath, type: 'file', fileId: f.id, is_link: f.is_link, children: {} };
+               currentLevel[part] = fileNode;
+               
+               // If it's a Verilog file, parse and add module nodes
+               if (part.endsWith('.v') || part.endsWith('.sv')) {
+                  try {
+                      const modules = parseVerilog(f.content || '');
+                      modules.forEach(mod => {
+                          const modName = mod.name;
+                          const modPath = `${currentPath}:${modName}`;
+                          const modNode: TreeNode = { 
+                              name: modName, 
+                              path: modPath, 
+                              type: 'module', 
+                              content: mod.header,
+                              fileId: f.id,
+                              children: {} 
+                          };
+                          
+                          mod.signals.forEach(sig => {
+                              modNode.children[sig.name] = {
+                                  name: sig.name,
+                                  path: `${modPath}:${sig.name}`,
+                                  type: 'wire_reg',
+                                  content: sig.declaration,
+                                  fileId: f.id,
+                                  children: {}
+                              };
+                          });
+                          
+                          fileNode.children[modName] = modNode;
+                      });
+                  } catch (e) {
+                      console.error("Failed to parse Verilog file for modules:", f.path);
+                  }
+               }
+            } else {
+               if (!currentLevel[part]) {
+                  currentLevel[part] = { name: part, path: currentPath, type: 'folder', children: {} };
+               }
+               currentLevel = currentLevel[part].children;
+            }
+        }
+    });
+    return root;
+  }, [fileList]);
 
   const renderTree = (nodes: Record<string, TreeNode>, depth: number = 0) => {
     return Object.values(nodes)
@@ -1493,7 +1496,7 @@ int main(int argc, char** argv) {
                      const aid = activeFile || '_global';
                      setChatInputs(prev => ({
                        ...prev, 
-                       [aid]: typeof val === 'function' ? val(prev[aid] || '') : val
+                       [aid]: val as unknown as string
                      }));
                    }}
                    allFiles={filesData}

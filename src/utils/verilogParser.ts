@@ -10,7 +10,12 @@ export interface VerilogModule {
   signals: VerilogSignal[];
 }
 
+const parseCache = new Map<string, VerilogModule[]>();
+
 export function parseVerilog(content: string): VerilogModule[] {
+  if (!content) return [];
+  if (parseCache.has(content)) return parseCache.get(content)!;
+
   const modules: VerilogModule[] = [];
   
   // Basic regex to find module declarations
@@ -119,5 +124,11 @@ export function parseVerilog(content: string): VerilogModule[] {
     });
   }
   
+  parseCache.set(content, modules);
+  if (parseCache.size > 100) {
+      const firstKey = parseCache.keys().next().value;
+      if (firstKey) parseCache.delete(firstKey);
+  }
+
   return modules;
 }
