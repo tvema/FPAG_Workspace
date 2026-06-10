@@ -52,19 +52,45 @@ const CodeBlock = ({ lang, code, onAddFile, onProposeMerge }: { lang: string, co
 };
 
 function MessageContent({ content, onAddFile, onProposeMerge }: { content: string, onAddFile: (path: string, content: string) => void, onProposeMerge: (code: string) => void }) {
+    const [viewMode, setViewMode] = useState<'render' | 'raw'>('render');
     const parts = content.split(/(```[\s\S]*?```)/g);
     
+    const handleMergeSelection = () => {
+        const text = window.getSelection()?.toString();
+        if (text && text.trim()) {
+            onProposeMerge(text);
+        } else {
+            alert("Please select some text first");
+        }
+    };
+
     return (
-        <div className="text-[13px] leading-relaxed whitespace-pre-wrap">
-            {parts.map((part, i) => {
-                if (part.startsWith('```') && part.endsWith('```')) {
-                    const lines = part.split('\n');
-                    const lang = lines[0].slice(3).trim();
-                    const code = lines.slice(1, -1).join('\n');
-                    return <CodeBlock key={i} lang={lang} code={code} onAddFile={onAddFile} onProposeMerge={onProposeMerge} />;
-                }
-                return <span key={i}>{part}</span>;
-            })}
+        <div className="relative group text-[13px] leading-relaxed whitespace-pre-wrap w-full">
+            <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 z-10 -mt-2">
+                <button onClick={handleMergeSelection} title="Select text in this message to merge" className="bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 px-2 py-0.5 rounded text-[10px] border border-emerald-500/20 shadow-md">
+                    Merge Selected
+                </button>
+                <button onClick={() => setViewMode(viewMode === 'raw' ? 'render' : 'raw')} className="bg-[#1e1e1e] border border-white/10 px-2 py-0.5 rounded text-[10px] hover:bg-white/10 text-slate-300 shadow-md">
+                    {viewMode === 'raw' ? 'Render' : 'Raw Text'}
+                </button>
+            </div>
+            {viewMode === 'raw' ? (
+                <pre className="whitespace-pre-wrap font-mono text-[12px] bg-black/20 p-3 pt-6 rounded-md break-all mt-2">
+                    {content}
+                </pre>
+            ) : (
+                <div className="pt-2">
+                    {parts.map((part, i) => {
+                        if (part.startsWith('```') && part.endsWith('```')) {
+                            const lines = part.split('\n');
+                            const lang = lines[0].slice(3).trim();
+                            const code = lines.slice(1, -1).join('\n');
+                            return <CodeBlock key={i} lang={lang} code={code} onAddFile={onAddFile} onProposeMerge={onProposeMerge} />;
+                        }
+                        return <span key={i}>{part}</span>;
+                    })}
+                </div>
+            )}
         </div>
     );
 }
