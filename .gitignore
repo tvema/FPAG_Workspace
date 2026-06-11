@@ -6,8 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
-# .db files are tracked now for project.db
+*.db
 *.db-shm
 *.db-wal
 projects_export/
-цщклызфсу/
+
