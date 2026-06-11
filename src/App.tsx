@@ -40,7 +40,10 @@ export default function App() {
        const res = await fetch(`/api/git/status?projectId=${activeProject}`);
        if (res.ok) {
          const data = await res.json();
-         setGitStatus(data);
+         setGitStatus(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
+            return data;
+         });
        }
      } catch (e) {
        console.error("Failed to fetch git status", e);
