@@ -33,7 +33,7 @@ export function TestbenchDialog({
       setTbExt('.v');
       setMakefileTemplate(getTemplate('.v'));
     }
-  }, [isOpen, filesData]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

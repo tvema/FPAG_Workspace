@@ -29,7 +29,7 @@ export default function App() {
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
   const [fileUIStates, setFileUIStates] = useState<Record<string, { isTextMode?: boolean, vcd?: WaveformViewerViewState }>>({});
-  const { customPrompt, customConfirm, customMultiChoice, CustomDialogsRenderer } = useCustomDialogs();
+  const { customPrompt, customConfirm, customMultiChoice, customDialogsNode } = useCustomDialogs();
   
   const [gitStatus, setGitStatus] = useState<any>(null);
   const [activeProject, setActiveProject] = useState<string | null>(null);
@@ -1123,7 +1123,7 @@ int main(int argc, char** argv) {
         onClose={() => setGitMessageOpen(false)}
       />
 
-      <CustomDialogsRenderer />
+      {customDialogsNode}
       
       {fileToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">

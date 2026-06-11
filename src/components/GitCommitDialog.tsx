@@ -12,34 +12,29 @@ interface GitCommitDialogProps {
 export function GitCommitDialog({ isOpen, gitStatus, onCommit, onClose }: GitCommitDialogProps) {
   const [message, setMessage] = useState('Workspace update');
 
-  if (!isOpen) return null;
-
   const modified = gitStatus?.status?.modified || [];
   const created = gitStatus?.status?.created || [];
   const staged = gitStatus?.status?.staged || [];
   const deleted = gitStatus?.status?.deleted || [];
   const not_added = gitStatus?.status?.not_added || [];
 
-  // Combine to show what's likely to be committed or is currently in the working tree
-  // Usually, a user of this basic UI either adds specific files or implies "Commit All" depending on backend logic.
-  // We'll show staged, modified, created, deleted.
-
   const allFiles = Array.from(new Set([...modified, ...created, ...staged, ...deleted, ...not_added]));
 
   return (
     <AnimatePresence>
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      >
+      {isOpen && (
         <motion.div 
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.95, opacity: 0 }}
-          className="bg-[#1e1e1e] border border-white/10 p-6 rounded-xl w-full max-w-lg shadow-2xl flex flex-col"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
         >
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="bg-[#1e1e1e] border border-white/10 p-6 rounded-xl w-full max-w-lg shadow-2xl flex flex-col"
+          >
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-sm font-semibold text-white uppercase tracking-wider flex items-center gap-2">
               <GitMerge className="w-4 h-4 text-indigo-400" />
@@ -134,6 +129,7 @@ export function GitCommitDialog({ isOpen, gitStatus, onCommit, onClose }: GitCom
           </div>
         </motion.div>
       </motion.div>
+      )}
     </AnimatePresence>
   );
 }

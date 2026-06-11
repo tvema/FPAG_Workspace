@@ -62,7 +62,7 @@ export function useCustomDialogs() {
     });
   };
 
-  const CustomDialogsRenderer = () => (
+  const customDialogsNode = (
     <>
       <PromptDialog 
         isOpen={promptDialog.isOpen}
@@ -131,6 +131,6 @@ export function useCustomDialogs() {
     </>
   );
 
-  return { customPrompt, customConfirm, customMultiChoice, CustomDialogsRenderer };
+  return { customPrompt, customConfirm, customMultiChoice, customDialogsNode };
 }
 
