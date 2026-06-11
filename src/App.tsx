@@ -65,7 +65,7 @@ export default function App() {
 
   const [editorTheme, setEditorTheme] = useState<string>('vs-dark');
   const [showMinimap, setShowMinimap] = useState<boolean>(false);
-  const [lineJumpTarget, setLineJumpTarget] = useState<string | null>(null);
+  const [lineJumpTarget, setLineJumpTarget] = useState<number | string | null>(null);
   const editorRef = React.useRef<any>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
@@ -111,17 +111,24 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (lineJumpTarget && editorRef.current) {
+    if (lineJumpTarget !== null && editorRef.current) {
          setTimeout(() => { // wait for editor to apply model if active file just changed
              const model = editorRef.current.getModel();
              if (!model) return;
-             const searchString = lineJumpTarget.split('\n')[0].trim();
-             const matches = model.findMatches(searchString, false, false, false, null, true);
-             if (matches && matches.length > 0) {
-                 editorRef.current.revealLineInCenter(matches[0].range.startLineNumber);
-                 editorRef.current.setPosition({ lineNumber: matches[0].range.startLineNumber, column: 1 });
+             if (typeof lineJumpTarget === 'number') {
+                 editorRef.current.revealLineInCenter(lineJumpTarget);
+                 editorRef.current.setPosition({ lineNumber: lineJumpTarget, column: 1 });
                  editorRef.current.focus();
                  setLineJumpTarget(null);
+             } else {
+                 const searchString = lineJumpTarget.split('\n')[0].trim();
+                 const matches = model.findMatches(searchString, false, false, false, null, true);
+                 if (matches && matches.length > 0) {
+                     editorRef.current.revealLineInCenter(matches[0].range.startLineNumber);
+                     editorRef.current.setPosition({ lineNumber: matches[0].range.startLineNumber, column: 1 });
+                     editorRef.current.focus();
+                     setLineJumpTarget(null);
+                 }
              }
          }, 150);
     }
@@ -505,6 +512,7 @@ export default function App() {
                               type: 'module', 
                               content: mod.header,
                               fileId: f.id,
+                              lineStart: mod.lineStart,
                               children: {} 
                           };
                           
@@ -512,9 +520,10 @@ export default function App() {
                               modNode.children[sig.name] = {
                                   name: sig.name,
                                   path: `${modPath}:${sig.name}`,
-                                  type: 'wire_reg',
+                                  type: sig.ioType || sig.type,
                                   content: sig.declaration,
                                   fileId: f.id,
+                                  lineStart: sig.lineStart,
                                   children: {}
                               };
                           });

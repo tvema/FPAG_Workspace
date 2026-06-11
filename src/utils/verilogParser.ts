@@ -1,13 +1,16 @@
 export interface VerilogSignal {
   name: string;
   type: 'wire' | 'reg' | 'logic';
+  ioType?: 'input' | 'output' | 'inout';
   declaration: string;
+  lineStart?: number;
 }
 
 export interface VerilogModule {
   name: string;
   header: string;
   signals: VerilogSignal[];
+  lineStart?: number;
 }
 
 const parseCache = new Map<string, VerilogModule[]>();
@@ -16,86 +19,42 @@ export function parseVerilog(content: string): VerilogModule[] {
   if (!content) return [];
   if (parseCache.has(content)) return parseCache.get(content)!;
 
+  // Replace comments with spaces to preserve line numbers and offsets
+  const cleanedContent = content.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, ' '));
+
   const modules: VerilogModule[] = [];
   
-  // Basic regex to find module declarations
-  // module \s+ name \s* [#(params)] \s* [(ports)] \s* ;
-  // This is hard to do perfectly with regex because of nested parens, 
-  // but we can try a somewhat robust approach or extract chunks.
+  const moduleRegex = /\bmodule\b([\s\S]*?)(?:\bendmodule\b|$)/g;
+  let modMatch;
   
-  const moduleBlocks = content.split(/\bmodule\b/);
-  // first block is before the first module
-  
-  for (let i = 1; i < moduleBlocks.length; i++) {
-    const block = moduleBlocks[i];
-    const endMatch = block.match(/\bendmodule\b/);
-    let moduleBody = block;
-    if (endMatch) {
-      moduleBody = block.substring(0, endMatch.index);
-    }
+  let modIdx = 0;
+  while ((modMatch = moduleRegex.exec(cleanedContent)) !== null) {
+    modIdx++;
+    let moduleBody = modMatch[1];
+    const moduleStartIdx = modMatch.index + 6;
     
     // Find the end of module header, usually ended by ';'
-    // If there are parameters or ports, they happen before ';'
     let headerEndIdx = moduleBody.indexOf(';');
     if (headerEndIdx === -1) headerEndIdx = moduleBody.length;
     
     const headerStr = moduleBody.substring(0, headerEndIdx + 1);
     
     // Extract module name
-    // It's the first word that's a valid identifier
     const nameMatch = headerStr.trim().match(/^[a-zA-Z_][a-zA-Z0-9_]*/);
-    const name = nameMatch ? nameMatch[0] : `module_${i}`;
+    const name = nameMatch ? nameMatch[0] : `module_${modIdx}`;
     
     const header = `module ` + headerStr.trim();
     
-    const signals: VerilogSignal[] = [];
-    
-    // Now extract signals from the rest of the body + header ports
-    // We look for 'wire', 'reg', 'logic' declarations.
-    // e.g., wire [7:0] my_wire;
-    // reg my_reg = 0;
-    
-    // Simple regex for signals
-    const signalRegex = /\b(wire|reg|logic)\b\s+([^;]+);/g;
-    let sigMatch;
-    
-    // Only search in the whole module body just to be safe
-    while ((sigMatch = signalRegex.exec(moduleBody)) !== null) {
-      const type = sigMatch[1] as 'wire' | 'reg' | 'logic';
-      // declaration might have multiple names "wire a, b, c;"
-      const declExtracted = sigMatch[0].trim();
-      
-      // we'll just add the whole declaration as one tree node, 
-      // or we can extract comma separated names.
-      // let's extract the last word before '=' or ';' or ',' as the primary name for simplicity,
-      // or we can just use the whole declaration as the name for the tree to make it very clear.
-      
-      // Let's extract the main identifiers if possible, or just use the declaration string 
-      // as the "name" to be displayed.
-      // But to be cleaner, we can split by comma.
-      
-      const parts = sigMatch[2].split('=')[0]; // before assignment if any
-      const identifiersChunk = parts.replace(/\[.*?\]/g, ''); // remove ranges
-      
-      const identifiers = identifiersChunk.split(',')
-         .map(s => s.trim())
-         .filter(s => s.length > 0 && /^[a-zA-Z_]/.test(s));
-         
-      identifiers.forEach(ident => {
-          signals.push({
-             name: ident,
-             type,
-             declaration: declExtracted
-          });
-      });
-    }
-    
-    // For module ports like `input wire clk`, sometimes they don't end with ';' but with ',' in the header
-    // so let's also parse the header for input/output/inout wire/reg
-    const portRegex = /\b(input|output|inout)\b\s+(?:(wire|reg|logic)\s+)?([^,;)]+)/g;
+    const signalMap = new Map<string, VerilogSignal>();
+
+    // Parse ports (ANSI or non-ANSI)
+    const portRegex = /(?:^|[^\w.])\b(input|output|inout)\b\s+(?:(wire|reg|logic)\s+)?([^;,)]+)/g;
     let portMatch;
-    while ((portMatch = portRegex.exec(headerStr)) !== null) {
-       const ioType = portMatch[1];
+    while ((portMatch = portRegex.exec(moduleBody)) !== null) {
+       const globalIdx = moduleStartIdx + portMatch.index;
+       const lineStart = content.substring(0, globalIdx).split('\n').length;
+
+       const ioType = portMatch[1] as 'input' | 'output' | 'inout';
        const type = (portMatch[2] || 'wire') as 'wire' | 'reg' | 'logic';
        const rest = portMatch[3];
        
@@ -106,21 +65,72 @@ export function parseVerilog(content: string): VerilogModule[] {
           .filter(s => s.length > 0 && /^[a-zA-Z_]/.test(s));
           
        identifiers.forEach(ident => {
-          // avoid duplicates if already picked up
-          if (!signals.find(s => s.name === ident)) {
-              signals.push({
-                 name: ident,
-                 type,
-                 declaration: `${ioType} ${type} ${rest.trim()}`.replace(/\s+/g, ' ')
-              });
+          if (!signalMap.has(ident)) {
+             signalMap.set(ident, {
+                name: ident,
+                type,
+                ioType,
+                declaration: `${ioType} ${type} ${rest.trim()}`.replace(/\s+/g, ' '),
+                lineStart
+             });
+          } else {
+             const existing = signalMap.get(ident)!;
+             existing.ioType = ioType;
+             if (portMatch[2]) existing.type = type;
+             existing.lineStart = Math.min(existing.lineStart || Infinity, lineStart);
           }
        });
     }
+
+    // Parse internal wires/regs
+    const signalRegex = /(?:^|[^\w.])\b(wire|reg|logic)\b\s+([^;,)]+);/g;
+    let sigMatch;
     
+    while ((sigMatch = signalRegex.exec(moduleBody)) !== null) {
+      const globalIdx = moduleStartIdx + sigMatch.index;
+      const lineStart = content.substring(0, globalIdx).split('\n').length;
+
+      const type = sigMatch[1] as 'wire' | 'reg' | 'logic';
+      const declExtracted = sigMatch[0].trim();
+      const parts = sigMatch[2].split('=')[0]; 
+      const identifiersChunk = parts.replace(/\[.*?\]/g, ''); 
+      
+      const identifiers = identifiersChunk.split(',')
+         .map(s => s.trim())
+         .filter(s => s.length > 0 && /^[a-zA-Z_]/.test(s));
+         
+      identifiers.forEach(ident => {
+          if (!signalMap.has(ident)) {
+             signalMap.set(ident, {
+                name: ident,
+                type,
+                declaration: declExtracted.replace(/\s+/g, ' '),
+                lineStart
+             });
+          } else {
+             const existing = signalMap.get(ident)!;
+             existing.type = type;
+          }
+      });
+    }
+    
+    const allSignals = Array.from(signalMap.values());
+    
+    // Filter clean names
+    const cleanSignals = allSignals.filter(s => {
+       if (s.ioType) return true; // always show I/O
+       if (s.name.startsWith('_') || s.name.includes('$') || s.name.includes('.')) return false;
+       return true;
+    });
+
+    // Sort by lineStart (declaration order)
+    cleanSignals.sort((a, b) => (a.lineStart || 0) - (b.lineStart || 0));
+
     modules.push({
        name,
        header,
-       signals
+       signals: cleanSignals,
+       lineStart: content.substring(0, modMatch.index).split('\n').length
     });
   }
   

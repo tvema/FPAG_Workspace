@@ -1,13 +1,14 @@
 import React from 'react';
-import { ChevronRight, ChevronDown, FolderOpen, Box, MoreVertical, FilePlus, FolderPlus, FileCode2, Upload, Trash2, Link, Type, Hash } from 'lucide-react';
+import { ChevronRight, ChevronDown, FolderOpen, Box, MoreVertical, FilePlus, FolderPlus, FileCode2, Upload, Trash2, Link, Type, Hash, ArrowLeftRight, ArrowRightToLine, ArrowRightFromLine } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
 export type TreeNode = {
   name: string;
   path: string;
-  type: 'file' | 'folder' | 'module' | 'wire_reg';
+  type: 'file' | 'folder' | 'module' | 'wire' | 'reg' | 'logic' | 'input' | 'output' | 'inout';
   fileId?: string;
   content?: string;
+  lineStart?: number;
   children: Record<string, TreeNode>;
   is_link?: boolean;
   is_modified?: boolean;
@@ -60,8 +61,8 @@ export function ProjectTree({
   const renderTree = (nodes: Record<string, TreeNode>, depth: number = 0) => {
     return Object.values(nodes)
       .sort((a, b) => {
-        // Folders first, then files, then modules, then wires
-        const getWeight = (t: string) => t === 'folder' ? 0 : t === 'file' ? 1 : t === 'module' ? 2 : 3;
+        // Folders first, then files, then modules, then IO, then wires
+        const getWeight = (t: string) => t === 'folder' ? 0 : t === 'file' ? 1 : t === 'module' ? 2 : (t === 'input' || t === 'output' || t === 'inout') ? 3 : 4;
         if (getWeight(a.type) !== getWeight(b.type)) return getWeight(a.type) - getWeight(b.type);
         return a.name.localeCompare(b.name);
       })
@@ -192,8 +193,8 @@ export function ProjectTree({
                     setActiveFile(node.fileId); 
                     setOpenedTabs(p => p.includes(node.fileId!) ? p : [...p, node.fileId!]);
                     
-                    if (isModule || node.type === 'wire_reg') {
-                       setLineJumpTarget(node.content || null);
+                    if (isModule || node.type === 'wire' || node.type === 'reg' || node.type === 'logic' || node.type === 'input' || node.type === 'output' || node.type === 'inout') {
+                       setLineJumpTarget(node.lineStart !== undefined ? node.lineStart : (node.content || null));
                     }
                  }
               }}
@@ -213,10 +214,22 @@ export function ProjectTree({
                     node.is_link ? <Link className="w-3.5 h-3.5 shrink-0 text-emerald-400" /> : <FileCode2 className="w-3.5 h-3.5 shrink-0" />
                  ) : isModule ? (
                     <Box className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+                 ) : node.type === 'input' ? (
+                    <ArrowRightToLine className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                 ) : node.type === 'output' ? (
+                    <ArrowRightFromLine className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+                 ) : node.type === 'inout' ? (
+                    <ArrowLeftRight className="w-3.5 h-3.5 shrink-0 text-blue-400" />
+                 ) : node.type === 'reg' ? (
+                    <div className="w-3.5 h-3.5 shrink-0 flex items-center justify-center text-[10px] font-bold text-rose-400 bg-rose-400/10 rounded">r</div>
+                 ) : node.type === 'wire' ? (
+                    <div className="w-3.5 h-3.5 shrink-0 flex items-center justify-center text-[10px] font-bold text-cyan-400 bg-cyan-400/10 rounded">w</div>
+                 ) : node.type === 'logic' ? (
+                    <div className="w-3.5 h-3.5 shrink-0 flex items-center justify-center text-[10px] font-bold text-purple-400 bg-purple-400/10 rounded">l</div>
                  ) : (
                     <Hash className="w-3.5 h-3.5 shrink-0 text-slate-500" />
                  )}
-                 <span className={`truncate ${isModule ? 'text-indigo-300' : ''}`}>{node.name}</span>
+                 <span className={`truncate ${isModule ? 'text-indigo-300' : ''} ${node.type === 'input' ? 'text-emerald-200' : node.type === 'output' ? 'text-amber-200' : node.type === 'inout' ? 'text-blue-200' : node.type === 'reg' ? 'text-rose-200' : node.type === 'wire' ? 'text-cyan-200' : node.type === 'logic' ? 'text-purple-200' : ''}`}>{node.name}</span>
                  {gitMarker}
                </div>
                
@@ -239,12 +252,12 @@ export function ProjectTree({
                         }} className="px-3 py-1.5 text-xs text-indigo-300 hover:bg-indigo-500/10 hover:text-indigo-200 cursor-pointer outline-none flex items-center gap-2">
                             <Link className="w-3 h-3" /> Reference
                         </DropdownMenu.Item>
-                        {node.fileId && (
+                        {isFile && node.fileId && (
                         <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleRenameFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer outline-none flex items-center gap-2">
                             <Type className="w-3 h-3" /> Rename
                         </DropdownMenu.Item>
                         )}
-                        {node.fileId && (
+                        {isFile && node.fileId && (
                         <DropdownMenu.Item onClick={(e) => { e.stopPropagation(); handleDeleteFile(node.fileId!); }} className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 cursor-pointer outline-none flex items-center gap-2">
                             <Trash2 className="w-3 h-3" /> Delete
                         </DropdownMenu.Item>
