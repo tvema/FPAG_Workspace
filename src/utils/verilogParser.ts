@@ -6,12 +6,20 @@ export interface VerilogSignal {
   lineStart?: number;
 }
 
+export interface VerilogInstance {
+  type: string;
+  name: string;
+  lineStart?: number;
+}
+
 export interface VerilogModule {
   name: string;
   header: string;
   signals: VerilogSignal[];
+  instances: VerilogInstance[];
   lineStart?: number;
 }
+
 
 const parseCache = new Map<string, VerilogModule[]>();
 
@@ -126,10 +134,45 @@ export function parseVerilog(content: string): VerilogModule[] {
     // Sort by lineStart (declaration order)
     cleanSignals.sort((a, b) => (a.lineStart || 0) - (b.lineStart || 0));
 
+    // Parse instances
+    const instances: VerilogInstance[] = [];
+    const keywords = new Set([
+      'always', 'initial', 'assign', 'wire', 'reg', 'logic', 'input', 'output', 'inout', 
+      'module', 'endmodule', 'if', 'else', 'case', 'endcase', 'begin', 'end', 'for', 
+      'while', 'parameter', 'localparam', 'function', 'endfunction', 'task', 'endtask', 
+      'generate', 'endgenerate', 'genvar', 'integer', 'real', 'time', 'always_comb', 
+      'always_ff', 'always_latch', 'default', 'return', 'assert', 'property', 'sequence',
+      'and', 'nand', 'or', 'nor', 'xor', 'xnor', 'not', 'buf'
+    ]);
+    
+    // First, find module_type name(...) 
+    // This regex looks for `<type> <whitespace> <name> <whitespace_or_newline> (`
+    let instRegex1 = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+    let match1;
+    while ((match1 = instRegex1.exec(moduleBody)) !== null) {
+        if (!keywords.has(match1[1]) && !keywords.has(match1[2])) {
+            const globalIdx = moduleStartIdx + match1.index;
+            const lineStart = content.substring(0, globalIdx).split('\n').length;
+            instances.push({ type: match1[1], name: match1[2], lineStart });
+        }
+    }
+
+    // Now find module_type #(...) name (...)
+    let instRegex2 = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+#\s*\([^;]+?\)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+    let match2;
+    while ((match2 = instRegex2.exec(moduleBody)) !== null) {
+        if (!keywords.has(match2[1]) && !keywords.has(match2[2])) {
+            const globalIdx = moduleStartIdx + match2.index;
+            const lineStart = content.substring(0, globalIdx).split('\n').length;
+            instances.push({ type: match2[1], name: match2[2], lineStart });
+        }
+    }
+
     modules.push({
        name,
        header,
        signals: cleanSignals,
+       instances,
        lineStart: content.substring(0, modMatch.index).split('\n').length
     });
   }

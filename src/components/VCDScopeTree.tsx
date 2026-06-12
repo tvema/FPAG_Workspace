@@ -96,8 +96,17 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
     });
 
     // Try to match each node to a Verilog module using structural similarity of signals
-    const matchVerilogModule = (node: any) => {
-       if (node.signals.length > 0 && parsedModules.length > 0) {
+    const matchVerilogModule = (node: any, parentVerilogModule?: VerilogModule) => {
+       // if we have a parent verilog module, we can look up THIS node's name in parent's instances
+       if (parentVerilogModule) {
+           const inst = parentVerilogModule.instances.find(i => i.name === node.name);
+           if (inst) {
+               const mod = parsedModules.find(m => m.name === inst.type);
+               if (mod) node.verilogModule = mod;
+           }
+       }
+
+       if (!node.verilogModule && node.signals.length > 0 && parsedModules.length > 0) {
            const instanceSigNames = new Set(node.signals.map((s: any) => s.name));
            let bestMatch: VerilogModule | null = null;
            let maxIntersection = 0;
@@ -115,7 +124,7 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
                node.verilogModule = bestMatch;
            }
        }
-       Object.values(node.children).forEach((child: any) => matchVerilogModule(child));
+       Object.values(node.children).forEach((child: any) => matchVerilogModule(child, node.verilogModule));
     };
     matchVerilogModule(tree);
     
