@@ -233,6 +233,7 @@ export function ProjectTree({
                  {gitMarker}
                </div>
                
+               { (isFile || isModule) && (
                <DropdownMenu.Root>
                   <DropdownMenu.Trigger asChild>
                      <button onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded p-1">
@@ -280,6 +281,7 @@ export function ProjectTree({
                      </DropdownMenu.Content>
                   </DropdownMenu.Portal>
                </DropdownMenu.Root>
+               )}
             </div>
             {hasChildren && !isCollapsed && (
                <div className="flex flex-col">

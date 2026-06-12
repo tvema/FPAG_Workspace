@@ -3,7 +3,7 @@ import { WaveformViewer, WaveformViewerViewState } from './WaveformViewer';
 import { parseVCD } from '../utils/vcdParser';
 import { ErrorBoundary } from './ErrorBoundary';
 
-export function VCDWrapper({ content, viewState, onViewStateChange }: { content: string, viewState?: WaveformViewerViewState, onViewStateChange?: (state: WaveformViewerViewState) => void }) {
+export function VCDWrapper({ content, viewState, onViewStateChange, filesData }: { content: string, viewState?: WaveformViewerViewState, onViewStateChange?: (state: WaveformViewerViewState) => void, filesData?: any }) {
   const vcdData = useMemo(() => {
     try {
       return parseVCD(content);
@@ -18,7 +18,7 @@ export function VCDWrapper({ content, viewState, onViewStateChange }: { content:
   }
   return (
     <ErrorBoundary>
-      <WaveformViewer vcd={vcdData} viewState={viewState} onViewStateChange={onViewStateChange} />
+      <WaveformViewer vcd={vcdData} viewState={viewState} onViewStateChange={onViewStateChange} filesData={filesData} />
     </ErrorBoundary>
   );
 }

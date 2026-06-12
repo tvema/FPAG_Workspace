@@ -18,12 +18,18 @@ export interface VCDData {
   maxTime: number;
 }
 
+const vcdCache = new Map<string, VCDData>();
+
 export function parseVCD(vcdText: string): VCDData {
+  if (!vcdText) return { timescale: '1s', signals: [], data: {}, maxTime: 0 };
+  if (vcdCache.has(vcdText)) return vcdCache.get(vcdText)!;
+
   const lines = vcdText.split('\n').map(l => l.trim()).filter(l => l);
   let state = 'HEADER';
   
   const signals: VCDSignal[] = [];
   const data: Record<string, VCDTransition[]> = {};
+  const scopeStack: string[] = [];
   let currentModule = 'top';
   let timescale = '1s';
   let maxTime = 0;
@@ -43,8 +49,12 @@ export function parseVCD(vcdText: string): VCDData {
       } else if (line.startsWith('$scope')) {
         const parts = line.split(/\s+/);
         if (parts.length >= 3) {
-          currentModule = parts[2];
+          scopeStack.push(parts[2]);
+          currentModule = scopeStack.join('.');
         }
+      } else if (line.startsWith('$upscope')) {
+        scopeStack.pop();
+        currentModule = scopeStack.length > 0 ? scopeStack.join('.') : 'top';
       } else if (line.startsWith('$var')) {
         // $var wire 1 ! clk $end
         const match = line.match(/\$var\s+(\w+)\s+(\d+)\s+(\S+)\s+(\S+.*?)(\s+\$end)?$/);
@@ -110,5 +120,7 @@ export function parseVCD(vcdText: string): VCDData {
     }
   });
 
-  return { timescale, signals, data, maxTime };
+  const result = { timescale, signals, data, maxTime };
+  vcdCache.set(vcdText, result);
+  return result;
 }

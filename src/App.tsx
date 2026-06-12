@@ -17,6 +17,7 @@ import { defaultVerilogMake, defaultCppMake } from './utils/templates';
 import { parseVerilog } from './utils/verilogParser';
 import { MarkdownWrapper } from './components/MarkdownWrapper';
 import { VCDWrapper } from './components/VCDWrapper';
+import { VCDScopeTree } from './components/VCDScopeTree';
 import { initialFiles } from './utils/initialFiles';
 import { BuildOutputPanel } from './components/BuildOutputPanel';
 import { TabsBar } from './components/TabsBar';
@@ -658,6 +659,16 @@ int main(int argc, char** argv) {
       // 3. Create a link to the output VCD file
       const vcdPath = tbFolder + tbName + '.vcd';
       await handleAddFile(vcdPath, 'Waiting for generated VCD file after Make...', activeProject || undefined, true);
+
+      // 4. Save tb_config.json
+      const tbConfigPath = tbFolder + 'tb_config.json';
+      const tbConfigData = {
+          tbName,
+          filesToInclude: [...filesToInclude, tbPath],
+          tbExt,
+          vcdName: tbName + '.vcd'
+      };
+      await handleAddFile(tbConfigPath, JSON.stringify(tbConfigData, null, 2), activeProject || undefined);
   };
 
   const handleGitAction = async (action: 'init' | 'add' | 'rm' | 'commit', path?: string, commitMessage?: string) => {
@@ -929,27 +940,37 @@ int main(int argc, char** argv) {
       {/* Main Content */}
       <div className="flex-1 w-full overflow-hidden">
         <PanelGroup orientation="horizontal" id="workspace-horizontal-v5">
-          {/* Ollama Chat Left Panel */}
+          {/* Left Panel */}
           {isChatOpen && (
             <>
               <Panel id="chat" defaultSize={25} minSize={15} className="flex flex-col z-20 bg-[#16161a]">
-                <OllamaChat 
-                   onAddFile={handleAddFile} 
-                   activeFileId={activeFile} 
-                   activeFilePath={filesData[activeFile]?.path || null} 
-                   activeFileContent={filesData[activeFile]?.content || null} 
-                   projectContext={Object.values(filesData).find((f: any) => f.path === 'ai_context.md' || f.name === 'ai_context.md')?.content || null}
-                   onProposeMerge={setProposedMergeCode}
-                   input={activeFile ? (chatInputs[activeFile] || '') : ''}
-                   setInput={(val) => {
-                     const aid = activeFile || '_global';
-                     setChatInputs(prev => ({
-                       ...prev, 
-                       [aid]: val as unknown as string
-                     }));
-                   }}
-                   allFiles={filesData}
-                />
+                 { (activeFile && ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && !fileUIStates[activeFile]?.isTextMode) ? (
+                    <VCDScopeTree 
+                        vcdContent={filesData[activeFile].content}
+                        viewState={fileUIStates[activeFile]?.vcd}
+                        updateViewState={(updater) => updateFileUI(activeFile, p => ({ ...p, vcd: updater(p.vcd) }))}
+                        activeFilePath={filesData[activeFile]?.path}
+                        filesData={filesData}
+                    />
+                 ) : (
+                    <OllamaChat 
+                       onAddFile={handleAddFile} 
+                       activeFileId={activeFile} 
+                       activeFilePath={filesData[activeFile]?.path || null} 
+                       activeFileContent={filesData[activeFile]?.content || null} 
+                       projectContext={Object.values(filesData).find((f: any) => f.path === 'ai_context.md' || f.name === 'ai_context.md')?.content || null}
+                       onProposeMerge={setProposedMergeCode}
+                       input={activeFile ? (chatInputs[activeFile] || '') : ''}
+                       setInput={(val) => {
+                         const aid = activeFile || '_global';
+                         setChatInputs(prev => ({
+                           ...prev, 
+                           [aid]: val as unknown as string
+                         }));
+                       }}
+                       allFiles={filesData}
+                    />
+                 )}
               </Panel>
               <PanelResizeHandle className="w-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-col-resize z-50 relative" />
             </>
@@ -984,6 +1005,7 @@ int main(int argc, char** argv) {
                       content={filesData[activeFile]?.content || ''} 
                       viewState={fileUIStates[activeFile]?.vcd}
                       onViewStateChange={(vcd) => updateFileUI(activeFile, p => ({ ...p, vcd }))}
+                      filesData={filesData}
                   />
                 </div>
               ) : (['markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').endsWith('.md')) && !fileUIStates[activeFile]?.isTextMode ? (

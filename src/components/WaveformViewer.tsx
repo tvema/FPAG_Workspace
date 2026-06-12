@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { VCDData, VCDSignal } from '../utils/vcdParser';
 import { ZoomIn, ZoomOut, Maximize, GripVertical, Settings2, Eye, EyeOff, Activity, Box, Hash, HelpCircle, ChevronRight, ChevronLeft, Filter, Search, Magnet, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { parseVerilog, VerilogModule } from '../utils/verilogParser';
 
 const TypeIcon = ({ type }: { type?: string }) => {
   switch (type) {
@@ -31,6 +32,7 @@ interface WaveformViewerProps {
   vcd: VCDData;
   viewState?: WaveformViewerViewState;
   onViewStateChange?: (state: WaveformViewerViewState) => void;
+  filesData?: any;
 }
 
 const ROW_HEIGHT = 40;
@@ -44,7 +46,7 @@ export interface TrackConfig {
   isHidden: boolean;
 }
 
-export function WaveformViewer({ vcd, viewState, onViewStateChange }: WaveformViewerProps) {
+export function WaveformViewer({ vcd, viewState, onViewStateChange, filesData }: WaveformViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
@@ -66,7 +68,7 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange }: WaveformVi
   }, [vcd]);
   
   const [selectedModule, setSelectedModule] = useState<string>(viewState?.selectedModule || 'all');
-  const [filterMode, setFilterMode] = useState<'all' | 'clean'>('all');
+  const [filterMode, setFilterMode] = useState<'all' | 'clean' | 'io_only'>('all');
   
   const [cursorTime, setCursorTime] = useState<number>(0);
   const [isHovering, setIsHovering] = useState<boolean>(false);
@@ -91,6 +93,13 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange }: WaveformVi
     return () => clearTimeout(timer);
   }, [scale, offsetX, offsetY, tracks, selectedModule]);
   
+  // Sync external track changes down
+  useEffect(() => {
+     if (viewState?.tracks && viewState.tracks !== tracks) {
+        setTracks(viewState.tracks);
+     }
+  }, [viewState?.tracks]);
+
   useEffect(() => {
     const finalTracks: TrackConfig[] = [];
     const prevTracksMap = new Map<string, TrackConfig>();
@@ -132,6 +141,56 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange }: WaveformVi
     }
   }, [vcd]);
 
+  const parsedVerilogModules = useMemo(() => {
+     const res: VerilogModule[] = [];
+     if (!filesData) return res;
+     for (const k in filesData) {
+         const f = filesData[k];
+         if (['v','sv','verilog'].includes(f.type?.toLowerCase() || '') || f.name.endsWith('.v')) {
+             res.push(...parseVerilog(f.content));
+         }
+     }
+     return res;
+  }, [filesData]);
+
+  const ioSignalsSet = useMemo(() => {
+     if (filterMode !== 'io_only') return new Set<string>();
+     
+     // Find the best matching Verilog module for the current selection, or just aggregate all if 'all' is selected.
+     let activeMods = parsedVerilogModules;
+     
+     if (selectedModule !== 'all') {
+         const vcdSignalsInInstance = vcd.signals.filter(s => s.module === selectedModule);
+         const instanceSigNames = new Set(vcdSignalsInInstance.map(s => s.name));
+
+         let bestMatch: VerilogModule | null = null;
+         let maxIntersection = 0;
+         for (const mod of parsedVerilogModules) {
+             let overlap = 0;
+             for (const sig of mod.signals) {
+                 if (instanceSigNames.has(sig.name)) overlap++;
+             }
+             if (overlap > maxIntersection) {
+                 maxIntersection = overlap;
+                 bestMatch = mod;
+             }
+         }
+         if (bestMatch) {
+            activeMods = [bestMatch];
+         }
+     }
+     
+     const s = new Set<string>();
+     activeMods.forEach(mod => {
+        mod.signals.forEach(sig => {
+            if (sig.ioType === 'input' || sig.ioType === 'output' || sig.ioType === 'inout') {
+                s.add(sig.name);
+            }
+        });
+     });
+     return s;
+  }, [filterMode, selectedModule, parsedVerilogModules, vcd]);
+
   const moduleTracks = useMemo(() => tracks.filter(t => selectedModule === 'all' || t.signal.module === selectedModule), [tracks, selectedModule]);
   
   const filteredModuleTracks = useMemo(() => {
@@ -142,9 +201,13 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange }: WaveformVi
         if (n.startsWith('_') || n.includes('$') || n.includes('.')) return false;
         return true;
       });
+    } else if (filterMode === 'io_only') {
+      return moduleTracks.filter(t => {
+         return ioSignalsSet.has(t.signal.name);
+      });
     }
     return moduleTracks;
-  }, [moduleTracks, filterMode]);
+  }, [moduleTracks, filterMode, ioSignalsSet]);
 
   const visibleTracks = useMemo(() => filteredModuleTracks.filter(t => !t.isHidden), [filteredModuleTracks]);
 
@@ -669,6 +732,14 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange }: WaveformVi
                  >
                    <span>Clean Names</span>
                    {filterMode === 'clean' && <Box className="w-3 h-3 text-emerald-400" />}
+                 </button>
+               </DropdownMenu.Item>
+               <DropdownMenu.Item asChild>
+                 <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[#27272a] text-slate-300 flex items-center justify-between"
+                   onClick={(e) => { e.preventDefault(); setFilterMode(filterMode === 'io_only' ? 'all' : 'io_only'); }}
+                 >
+                   <span>I/O Ports Only</span>
+                   {filterMode === 'io_only' && <Box className="w-3 h-3 text-emerald-400" />}
                  </button>
                </DropdownMenu.Item>
                <div className="h-px bg-[#27272a] my-1" />
