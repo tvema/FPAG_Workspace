@@ -24,12 +24,14 @@ import { TabsBar } from './components/TabsBar';
 import { ProjectTree, TreeNode } from './components/ProjectTree';
 import { Header } from './components/Header';
 
+import { VerilogDiagramViewer } from './components/VerilogDiagramViewer';
+
 export default function App() {
   const [filesData, setFilesData] = useState<Record<string, {name: string, path: string, type: string, content: string, is_link?: boolean, is_modified?: boolean}>>({});
   const [activeFile, setActiveFile] = useState<string>('');
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
-  const [fileUIStates, setFileUIStates] = useState<Record<string, { isTextMode?: boolean, vcd?: WaveformViewerViewState }>>({});
+  const [fileUIStates, setFileUIStates] = useState<Record<string, { isTextMode?: boolean, isDiagramMode?: boolean, vcd?: WaveformViewerViewState }>>({});
   const { customPrompt, customConfirm, customMultiChoice, customDialogsNode } = useCustomDialogs();
   
   const [gitStatus, setGitStatus] = useState<any>(null);
@@ -1016,6 +1018,10 @@ int main(int argc, char** argv) {
                 </div>
               ) : (['markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').endsWith('.md')) && !fileUIStates[activeFile]?.isTextMode ? (
                 <MarkdownWrapper content={filesData[activeFile]?.content || ''} />
+              ) : (['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || filesData[activeFile]?.name?.endsWith('.v') || filesData[activeFile]?.name?.endsWith('.sv')) && fileUIStates[activeFile]?.isDiagramMode ? (
+                <div className="w-full h-full">
+                   <VerilogDiagramViewer content={filesData[activeFile]?.content || ''} />
+                </div>
               ) : (
                 <Editor
                   height="100%"

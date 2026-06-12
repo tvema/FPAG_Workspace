@@ -6,10 +6,16 @@ export interface VerilogSignal {
   lineStart?: number;
 }
 
+export interface VerilogInstancePortConnection {
+  portName: string;
+  connectedNet: string;
+}
+
 export interface VerilogInstance {
   type: string;
   name: string;
   lineStart?: number;
+  connections: VerilogInstancePortConnection[];
 }
 
 export interface VerilogModule {
@@ -145,26 +151,38 @@ export function parseVerilog(content: string): VerilogModule[] {
       'and', 'nand', 'or', 'nor', 'xor', 'xnor', 'not', 'buf'
     ]);
     
-    // First, find module_type name(...) 
-    // This regex looks for `<type> <whitespace> <name> <whitespace_or_newline> (`
-    let instRegex1 = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
-    let match1;
-    while ((match1 = instRegex1.exec(moduleBody)) !== null) {
-        if (!keywords.has(match1[1]) && !keywords.has(match1[2])) {
-            const globalIdx = moduleStartIdx + match1.index;
+    // Regex for module instantiation:
+    // <type> [ #(...) ] <name> [ [...] ] ( <connections> ) ;
+    // We avoid matching `module` keyword since we're inside the body, but keywords are checked later.
+    let instRegex = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:#\s*\([^;]*?\))?\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\[[^\]]*\])?\s*\(([^;]*?)\)\s*;/g;
+    let match;
+    while ((match = instRegex.exec(moduleBody)) !== null) {
+        if (!keywords.has(match[1]) && !keywords.has(match[2])) {
+            const globalIdx = moduleStartIdx + match.index;
             const lineStart = content.substring(0, globalIdx).split('\n').length;
-            instances.push({ type: match1[1], name: match1[2], lineStart });
-        }
-    }
+            
+            const connectionsStr = match[3];
+            const connections: VerilogInstancePortConnection[] = [];
+            
+            const namedConnRegex = /\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*(.*?)\s*\)/g;
+            let connMatch;
+            let hasNamed = false;
+            while ((connMatch = namedConnRegex.exec(connectionsStr)) !== null) {
+                hasNamed = true;
+                connections.push({ portName: connMatch[1], connectedNet: connMatch[2].trim() });
+            }
+            
+            if (!hasNamed) {
+                // Ordered connections. We split by comma roughly
+                let netMatch = connectionsStr.split(',').map(s => s.trim());
+                netMatch.forEach((net, idx) => {
+                   if (net) {
+                       connections.push({ portName: `port_${idx}`, connectedNet: net });
+                   }
+                });
+            }
 
-    // Now find module_type #(...) name (...)
-    let instRegex2 = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+#\s*\([^;]+?\)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
-    let match2;
-    while ((match2 = instRegex2.exec(moduleBody)) !== null) {
-        if (!keywords.has(match2[1]) && !keywords.has(match2[2])) {
-            const globalIdx = moduleStartIdx + match2.index;
-            const lineStart = content.substring(0, globalIdx).split('\n').length;
-            instances.push({ type: match2[1], name: match2[2], lineStart });
+            instances.push({ type: match[1], name: match[2], lineStart, connections });
         }
     }
 

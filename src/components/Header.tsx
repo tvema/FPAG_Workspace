@@ -135,6 +135,15 @@ export function Header({
               {fileUIStates[activeFile]?.isTextMode ? (['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'Show Waveform' : 'Show Render') : 'Show Text'}
            </button>
         )}
+        {activeFile && (['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || filesData[activeFile]?.name?.endsWith('.v') || filesData[activeFile]?.name?.endsWith('.sv')) && (
+           <button 
+              onClick={() => updateFileUI(activeFile, s => ({ ...s, isDiagramMode: !s.isDiagramMode }))}
+              className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-emerald-400 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
+           >
+              {fileUIStates[activeFile]?.isDiagramMode ? <FileText className="w-3.5 h-3.5" /> : <Activity className="w-3.5 h-3.5" />}
+              {fileUIStates[activeFile]?.isDiagramMode ? 'Show Code' : 'Show Block Diagram'}
+           </button>
+        )}
 
         <button 
           onClick={handleImportZip}
