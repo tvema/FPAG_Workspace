@@ -17,3 +17,10 @@ It is specifically built for working with Verilog and Intel Quartus Prime files.
    fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
    const response = await fetchNode(apiUrl, fetchOptions);
    ```
+
+# UI/UX & React Flow Diagram Rules
+7. **VerilogDiagramViewer Component**: 
+   - **`input` ports** of the top module MUST be rendered as horizontal rectangles on the LEFTmost side of the screen (`x: minX - 350`) in a column. Visually, they must have a chevron right edge (pointing towards the center) where the signal connects to the rest of the circuit.
+   - **`output` ports** of the top module MUST be rendered as horizontal rectangles on the RIGHTmost side of the screen (`x: maxX + 150`) in a column. Visually, they must have a chevron left edge (accepting the incoming wire) and the wire connects on their left.
+   - **`inout` ports** MUST be rendered with a chevron shape on both left and right edges.
+   - Do NOT just group them all inside or directly attached to `Logic Core`. They are conceptually the external boundaries (pins) of the module being viewed.

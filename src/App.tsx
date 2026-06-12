@@ -25,13 +25,14 @@ import { ProjectTree, TreeNode } from './components/ProjectTree';
 import { Header } from './components/Header';
 
 import { VerilogDiagramViewer } from './components/VerilogDiagramViewer';
+import { VerilogASTViewer } from './components/VerilogASTViewer';
 
 export default function App() {
   const [filesData, setFilesData] = useState<Record<string, {name: string, path: string, type: string, content: string, is_link?: boolean, is_modified?: boolean}>>({});
   const [activeFile, setActiveFile] = useState<string>('');
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
-  const [fileUIStates, setFileUIStates] = useState<Record<string, { isTextMode?: boolean, isDiagramMode?: boolean, vcd?: WaveformViewerViewState }>>({});
+  const [fileUIStates, setFileUIStates] = useState<Record<string, { isTextMode?: boolean, isDiagramMode?: boolean, vcd?: WaveformViewerViewState, diagramSelectedNet?: string }>>({});
   const { customPrompt, customConfirm, customMultiChoice, customDialogsNode } = useCustomDialogs();
   
   const [gitStatus, setGitStatus] = useState<any>(null);
@@ -960,6 +961,12 @@ int main(int argc, char** argv) {
                         onAddFile={handleAddFile}
                         activeProject={activeProject}
                     />
+                 ) : (activeFile && ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && fileUIStates[activeFile]?.isDiagramMode) ? (
+                    <VerilogASTViewer 
+                        content={filesData[activeFile]?.content || ''} 
+                        selectedNet={fileUIStates[activeFile]?.diagramSelectedNet}
+                        onSelectNet={(net) => updateFileUI(activeFile, p => ({ ...p, diagramSelectedNet: net }))}
+                    />
                  ) : (
                     <OllamaChat 
                        onAddFile={handleAddFile} 
@@ -1020,7 +1027,11 @@ int main(int argc, char** argv) {
                 <MarkdownWrapper content={filesData[activeFile]?.content || ''} />
               ) : (['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || filesData[activeFile]?.name?.endsWith('.v') || filesData[activeFile]?.name?.endsWith('.sv')) && fileUIStates[activeFile]?.isDiagramMode ? (
                 <div className="w-full h-full">
-                   <VerilogDiagramViewer content={filesData[activeFile]?.content || ''} />
+                   <VerilogDiagramViewer 
+                       content={filesData[activeFile]?.content || ''}
+                       selectedNet={fileUIStates[activeFile]?.diagramSelectedNet}
+                       onSelectNet={(net) => updateFileUI(activeFile, p => ({ ...p, diagramSelectedNet: net }))}
+                   />
                 </div>
               ) : (
                 <Editor

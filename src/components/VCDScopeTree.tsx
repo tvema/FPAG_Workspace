@@ -17,7 +17,7 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
      if (!configFilePath || !filesData) return {};
      const f = Object.values(filesData).find((f: any) => f.path === configFilePath);
      if (f) {
-        try { return JSON.parse(f.content); } catch(e) { return {}; }
+        try { return JSON.parse((f as any).content); } catch(e) { return {}; }
      }
      return {};
   }, [configFilePath, filesData]);
@@ -45,7 +45,7 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
      const parts = activeFilePath.split('/');
      parts.pop();
      const configPath = parts.join('/') + '/tb_config.json';
-     const tbConfigObj = Object.values(filesData).find((f: any) => f.path === configPath);
+     const tbConfigObj = (Object.values(filesData) as any[]).find((f: any) => f.path === configPath);
      if (tbConfigObj) {
          try { return JSON.parse(tbConfigObj.content); } catch (e) { return null; }
      }
@@ -57,7 +57,7 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
      if (!tbConfig || !filesData) return res;
      
      tbConfig.filesToInclude.forEach((fPath: string) => {
-         const f = Object.values(filesData).find((f: any) => f.path === fPath || f.path.replace(/^\/+/, '') === fPath.replace(/^\/+/, ''));
+         const f = (Object.values(filesData) as any[]).find((f: any) => f.path === fPath || f.path.replace(/^\/+/, '') === fPath.replace(/^\/+/, ''));
          if (f && f.content) {
              res.push(...parseVerilog(f.content));
          }
@@ -65,7 +65,7 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
      // Fallback: parse all if tbConfig is weird
      if (res.length === 0) {
          for (const k in filesData) {
-             const f = filesData[k];
+             const f = filesData[k] as any;
              if (f.type === 'verilog' || f.name.endsWith('.v') || f.name.endsWith('.sv')) {
                  res.push(...parseVerilog(f.content));
              }

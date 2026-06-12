@@ -4,6 +4,7 @@ export interface VerilogSignal {
   ioType?: 'input' | 'output' | 'inout';
   declaration: string;
   lineStart?: number;
+  width?: number | string;
 }
 
 export interface VerilogInstancePortConnection {
@@ -72,8 +73,20 @@ export function parseVerilog(content: string): VerilogModule[] {
        const type = (portMatch[2] || 'wire') as 'wire' | 'reg' | 'logic';
        const rest = portMatch[3];
        
+       let widthVal: string | number = 1;
+       const widthMatch = rest.match(/\[(.*?)\]/);
+       if (widthMatch) {
+          const inner = widthMatch[1];
+          const partsNum = inner.split(':');
+          if (partsNum.length === 2 && !isNaN(Number(partsNum[0])) && !isNaN(Number(partsNum[1]))) {
+             widthVal = Math.abs(Number(partsNum[0]) - Number(partsNum[1])) + 1;
+          } else {
+             widthVal = `[${inner}]`;
+          }
+       }
+
        const parts = rest.split('=')[0];
-       const identifiersChunk = parts.replace(/\[.*?\]/g, '');
+       const identifiersChunk = parts.replace(/\[.*?\]/g, '').replace(/\b(?:signed|unsigned)\b/g, '');
        const identifiers = identifiersChunk.split(',')
           .map(s => s.trim())
           .filter(s => s.length > 0 && /^[a-zA-Z_]/.test(s));
@@ -85,13 +98,15 @@ export function parseVerilog(content: string): VerilogModule[] {
                 type,
                 ioType,
                 declaration: `${ioType} ${type} ${rest.trim()}`.replace(/\s+/g, ' '),
-                lineStart
+                lineStart,
+                width: widthVal
              });
           } else {
              const existing = signalMap.get(ident)!;
              existing.ioType = ioType;
              if (portMatch[2]) existing.type = type;
              existing.lineStart = Math.min(existing.lineStart || Infinity, lineStart);
+             if (widthVal !== 1) existing.width = widthVal;
           }
        });
     }
@@ -106,8 +121,22 @@ export function parseVerilog(content: string): VerilogModule[] {
 
       const type = sigMatch[1] as 'wire' | 'reg' | 'logic';
       const declExtracted = sigMatch[0].trim();
-      const parts = sigMatch[2].split('=')[0]; 
-      const identifiersChunk = parts.replace(/\[.*?\]/g, ''); 
+      const rest = sigMatch[2];
+      
+      let widthVal: string | number = 1;
+      const widthMatch = rest.match(/\[(.*?)\]/);
+      if (widthMatch) {
+         const inner = widthMatch[1];
+         const partsNum = inner.split(':');
+         if (partsNum.length === 2 && !isNaN(Number(partsNum[0])) && !isNaN(Number(partsNum[1]))) {
+            widthVal = Math.abs(Number(partsNum[0]) - Number(partsNum[1])) + 1;
+         } else {
+            widthVal = `[${inner}]`;
+         }
+      }
+
+      const parts = rest.split('=')[0]; 
+      const identifiersChunk = parts.replace(/\[.*?\]/g, '').replace(/\b(?:signed|unsigned)\b/g, ''); 
       
       const identifiers = identifiersChunk.split(',')
          .map(s => s.trim())
@@ -119,11 +148,13 @@ export function parseVerilog(content: string): VerilogModule[] {
                 name: ident,
                 type,
                 declaration: declExtracted.replace(/\s+/g, ' '),
-                lineStart
+                lineStart,
+                width: widthVal
              });
           } else {
              const existing = signalMap.get(ident)!;
              existing.type = type;
+             if (widthVal !== 1) existing.width = widthVal;
           }
       });
     }

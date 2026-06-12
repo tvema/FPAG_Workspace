@@ -194,7 +194,7 @@ export function ProjectTree({
                     setOpenedTabs(p => p.includes(node.fileId!) ? p : [...p, node.fileId!]);
                     
                     if (isModule || node.type === 'wire' || node.type === 'reg' || node.type === 'logic' || node.type === 'input' || node.type === 'output' || node.type === 'inout') {
-                       setLineJumpTarget(node.lineStart !== undefined ? node.lineStart : (node.content || null));
+                       setLineJumpTarget(node.lineStart !== undefined ? String(node.lineStart) : (node.content ? String(node.content) : null));
                     }
                  }
               }}
