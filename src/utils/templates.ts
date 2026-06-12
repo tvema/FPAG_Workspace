@@ -4,6 +4,7 @@ VVP=vvp
 
 # Target executable
 TARGET = {{tbName}}.vvp
+VCD_FILE = {{tbName}}.vcd
 
 # Source files
 SOURCES = {{files}} {{tbName}}.v
@@ -11,7 +12,7 @@ SOURCES = {{files}} {{tbName}}.v
 all: run
 
 build:
-	$(IVERILOG) -o $(TARGET) $(SOURCES)
+	$(IVERILOG) -DVCD_FILE=\\"$(VCD_FILE)\\" -o $(TARGET) $(SOURCES)
 
 run: build
 	$(VVP) $(TARGET)

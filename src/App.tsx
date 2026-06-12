@@ -605,7 +605,11 @@ module ${tbName};
     // Add your signals and instantiation here
     
     initial begin
+\`ifdef VCD_FILE
+        $dumpfile(\`VCD_FILE);
+\`else
         $dumpfile("${tbName}.vcd");
+\`endif
         $dumpvars(0, ${tbName});
         
         // Simulation logic
@@ -951,6 +955,8 @@ int main(int argc, char** argv) {
                         updateViewState={(updater) => updateFileUI(activeFile, p => ({ ...p, vcd: updater(p.vcd) }))}
                         activeFilePath={filesData[activeFile]?.path}
                         filesData={filesData}
+                        onAddFile={handleAddFile}
+                        activeProject={activeProject}
                     />
                  ) : (
                     <OllamaChat 

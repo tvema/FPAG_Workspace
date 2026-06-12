@@ -1,12 +1,45 @@
 import React, { useMemo, useState } from 'react';
 import { VCDData, parseVCD } from '../utils/vcdParser';
-import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Hash, Type } from 'lucide-react';
+import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Hash, Type, Save, List, Check, X } from 'lucide-react';
 import { WaveformViewerViewState } from './WaveformViewer';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { parseVerilog, VerilogModule } from '../utils/verilogParser';
 
-export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFilePath, filesData }: { vcdContent: string, viewState?: WaveformViewerViewState, updateViewState: (updater: (prev: any) => any) => void, activeFilePath?: string, filesData?: any }) {
+export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFilePath, filesData, onAddFile, activeProject }: { vcdContent: string, viewState?: WaveformViewerViewState, updateViewState: (updater: (prev: any) => any) => void, activeFilePath?: string, filesData?: any, onAddFile?: (path: string, content: string, project_id?: string) => Promise<void>, activeProject?: string | null }) {
   const vcd = useMemo(() => parseVCD(vcdContent), [vcdContent]);
   
+  const configFilePath = useMemo(() => {
+     if (!activeFilePath) return null;
+     return activeFilePath + '.configs.json';
+  }, [activeFilePath]);
+
+  const savedConfigs = useMemo(() => {
+     if (!configFilePath || !filesData) return {};
+     const f = Object.values(filesData).find((f: any) => f.path === configFilePath);
+     if (f) {
+        try { return JSON.parse(f.content); } catch(e) { return {}; }
+     }
+     return {};
+  }, [configFilePath, filesData]);
+
+  const [savingName, setSavingName] = useState('');
+  const [isSavingDialog, setIsSavingDialog] = useState(false);
+
+  const handleSaveConfig = async () => {
+    if (!savingName.trim() || !configFilePath || !onAddFile) return;
+    const newConfigs = { ...savedConfigs, [savingName.trim()]: viewState?.tracks || [] };
+    await onAddFile(configFilePath, JSON.stringify(newConfigs, null, 2), activeProject || undefined);
+    setIsSavingDialog(false);
+    setSavingName('');
+  };
+
+  const handleLoadConfig = (name: string) => {
+     const tracks = savedConfigs[name];
+     if (tracks) {
+        updateViewState(prev => ({ ...prev, tracks }));
+     }
+  };
+
   const tbConfig = useMemo(() => {
      if (!activeFilePath || !filesData) return null;
      const parts = activeFilePath.split('/');
@@ -161,7 +194,7 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
                      }
                  });
 
-                 const renderGroup = (title: string, sigs: any[], iconEl: React.ReactNode, defaultCollapsed: boolean = false) => {
+                 const renderGroup = (title: string, sigs: any[], iconEl: React.ReactNode, defaultCollapsed: boolean = true) => {
                      if (sigs.length === 0) return null;
                      const groupPath = `${node.path || 'root'}._g_${title}`;
                      const groupCollapsed = collapsedPaths[groupPath] ?? defaultCollapsed;
@@ -222,9 +255,52 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
   
   return (
     <div className="flex flex-col w-full h-full bg-[#121214] border-r border-[#27272a] text-sm font-sans flex-1 overflow-hidden">
-       <div className="h-10 border-b border-[#27272a] bg-[#16161a] flex items-center px-4 shrink-0 font-medium text-slate-300">
-          VCD Scopes
+       <div className="h-10 border-b border-[#27272a] bg-[#16161a] flex items-center justify-between px-4 shrink-0 font-medium text-slate-300">
+          <span>VCD Scopes</span>
+          <div className="flex items-center gap-1">
+             <button title="Save Configuration" onClick={() => setIsSavingDialog(!isSavingDialog)} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-emerald-400 transition-colors">
+                <Save className="w-3.5 h-3.5" />
+             </button>
+             {Object.keys(savedConfigs).length > 0 && (
+                 <DropdownMenu.Root>
+                    <DropdownMenu.Trigger asChild>
+                       <button title="Load Configuration" className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-indigo-400 transition-colors">
+                           <List className="w-3.5 h-3.5" />
+                       </button>
+                    </DropdownMenu.Trigger>
+                    <DropdownMenu.Portal>
+                       <DropdownMenu.Content align="end" className="z-50 min-w-[150px] bg-[#1e1e24] border border-[#27272a] rounded shadow-xl py-1">
+                          <div className="px-3 py-1 text-xs text-slate-500 font-medium">Saved Presets</div>
+                          {Object.keys(savedConfigs).map(key => (
+                              <DropdownMenu.Item asChild key={key}>
+                                 <button onClick={() => handleLoadConfig(key)} className="w-full px-3 py-1.5 text-xs text-left hover:bg-[#27272a] text-slate-300 truncate">
+                                    {key}
+                                 </button>
+                              </DropdownMenu.Item>
+                          ))}
+                       </DropdownMenu.Content>
+                    </DropdownMenu.Portal>
+                 </DropdownMenu.Root>
+             )}
+          </div>
        </div>
+       
+       {isSavingDialog && (
+          <div className="bg-[#1e1e24] border-b border-[#27272a] p-2 flex items-center gap-2 shrink-0">
+             <input 
+                 autoFocus
+                 type="text" 
+                 value={savingName}
+                 onChange={e => setSavingName(e.target.value)}
+                 onKeyDown={e => e.key === 'Enter' && handleSaveConfig()}
+                 placeholder="Config name..." 
+                 className="flex-1 bg-black/30 border border-[#3f3f46] rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+             />
+             <button onClick={handleSaveConfig} className="p-1 text-emerald-400 hover:bg-white/10 rounded"><Check className="w-3.5 h-3.5" /></button>
+             <button onClick={() => setIsSavingDialog(false)} className="p-1 text-slate-400 hover:bg-white/10 rounded"><X className="w-3.5 h-3.5" /></button>
+          </div>
+       )}
+
        <div className="flex-1 overflow-y-auto w-full pb-4">
           {renderTree(root)}
        </div>
