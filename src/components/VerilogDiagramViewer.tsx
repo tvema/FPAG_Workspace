@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useState, useCallback, memo } from 'react';
 import {
   ReactFlow, Controls, Background, Node, Edge, Handle, Position, NodeProps,
-  useNodesState, useEdgesState, useNodes, EdgeProps, getSmoothStepPath, ReactFlowProvider
+  useNodesState, useEdgesState, useNodes, EdgeProps, getSmoothStepPath, getBezierPath, ReactFlowProvider, useReactFlow
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { parseVerilog } from '../utils/verilogParser';
@@ -9,18 +9,33 @@ import { Cloud, Cpu, AlertTriangle } from 'lucide-react';
 import dagre from 'dagre';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
+const diagramStateCache = new Map<string, { positions: Record<string, { x: number, y: number }>, viewport?: any }>();
+
 const WireEdge = memo(({
   id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style = {}, data, selected
 }: EdgeProps) => {
-  const [edgePath] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition,
-    borderRadius: 16
-  });
+  const routingMode = data?.routingMode || 'orthogonal';
+
+  const edgePath = useMemo(() => {
+     if (routingMode === 'smooth') {
+         const [path] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
+         return path;
+     }
+
+     const hashString = (str: string) => {
+         let hash = 0;
+         for (let i = 0; i < str.length; i++) hash = (hash << 5) - hash + str.charCodeAt(i);
+         return hash;
+     };
+
+     const maxSpread = Math.min(120, Math.abs(targetX - sourceX) * 0.8);
+     const spread = Math.max(1, Math.floor(maxSpread));
+     const offset = (Math.abs(hashString(id)) % spread) - (spread / 2);
+     const centerX = (sourceX + targetX) / 2 + offset;
+
+     const [path] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, borderRadius: 16, centerX });
+     return path;
+  }, [id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, routingMode]);
 
   const widthVal = data?.width;
   const isBus = typeof widthVal === 'number' ? widthVal > 1 : (typeof widthVal === 'string' && widthVal !== '1' && widthVal.length > 0);
@@ -34,11 +49,10 @@ const WireEdge = memo(({
   const strokeWidth = isActive ? baseStrokeWidth + 2 : baseStrokeWidth;
   const outlineWidth = strokeWidth + 12;
 
-  const zIndex = isActive ? 200 : (isBus ? 10 : 5);
   const opacity = (data?.hasHoveredNet && !isActive) ? 0.1 : 1;
 
   return (
-    <g className="group pointer-events-auto" style={{ zIndex, opacity, transition: 'opacity 0.2s' }}>
+    <g className="group pointer-events-auto" style={{ opacity, transition: 'opacity 0.2s' }}>
       <path
         d={edgePath}
         fill="none"
@@ -311,6 +325,9 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
   const [localSelectedNet, setLocalSelectedNet] = useState<string | null>(null);
   const selectedNet = externalSelectedNet !== undefined ? externalSelectedNet : localSelectedNet;
 
+  const [routingMode, setRoutingMode] = useState<'orthogonal' | 'smooth'>('orthogonal');
+  const [edgesOnTop, setEdgesOnTop] = useState(false);
+
   const handleSelectNet = useCallback((net: string | null) => {
       setLocalSelectedNet(net);
       if (onSelectNet) onSelectNet(net);
@@ -318,6 +335,12 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
   
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  
+  const { setViewport, getViewport, fitView } = useReactFlow();
+  const [resetToggle, setResetToggle] = useState(0);
+
+  const nodesRef = React.useRef(nodes);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
 
   useEffect(() => {
      if (!parsedModules || parsedModules.length === 0) { setNodes([]); setEdges([]); return; }
@@ -352,6 +375,20 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
          readers.get(io.name)!.push({ id: `inout_${io.name}`, handle: io.name });
      });
 
+     const getSigIdx = (name: string) => {
+         const raw = name.replace(/^(in|out)_/, '');
+         const idx = topModule.signals.findIndex(s => s.name === raw);
+         return idx !== -1 ? idx : 999;
+     };
+     const sorter = (a: string, b: string) => {
+         const ia = getSigIdx(a);
+         const ib = getSigIdx(b);
+         if (ia !== 999 && ib !== 999) return ia - ib;
+         if (ia !== 999) return -1;
+         if (ib !== 999) return 1;
+         return a.localeCompare(b);
+     };
+
      const preparedInstances = topModule.instances.map(inst => {
          const instModuleDef = parsedModules.find(m => m.name === inst.type);
          const annotatedConnections = inst.connections.map(conn => {
@@ -367,6 +404,15 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
                else if (/(in|clk|en|rst|valid|ready|rx_|mosi|rxd)/i.test(conn.portName)) direction = 'target';
             }
             return { ...conn, direction };
+         });
+         
+         annotatedConnections.sort((cA, cB) => {
+             const netA = cA.connectedNet || '';
+             const netB = cB.connectedNet || '';
+             if (!netA && !netB) return cA.portName.localeCompare(cB.portName);
+             if (!netA) return 1;
+             if (!netB) return -1;
+             return sorter(netA, netB);
          });
 
          annotatedConnections.forEach(conn => {
@@ -394,7 +440,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
          if (src === 'logic_core') logicOutHandles.add(srcH);
          if (tgt === 'logic_core') logicInHandles.add(tgtH);
          newEdges.push({
-             id: `e_${src}_${srcH}_${tgt}_${tgtH}_${Math.random().toString(16).slice(2)}`,
+             id: `e_${src}_${srcH}_${tgt}_${tgtH}_${net}`,
              source: src, sourceHandle: srcH,
              target: tgt, targetHandle: tgtH,
              type: 'wireEdge',
@@ -409,72 +455,138 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
          else if (nr.length > 0) nr.forEach(tgt => addEdge('logic_core', `out_${net}`, tgt.id, tgt.handle, net));
      });
 
-     inputs.forEach(i => newNodes.push({ id: `in_${i.name}`, type: 'inputPort', position: {x:0, y:0}, zIndex: 10, data: { ...i } }));
-     outputs.forEach(o => newNodes.push({ id: `out_${o.name}`, type: 'outputPort', position: {x:0, y:0}, zIndex: 10, data: { ...o } }));
-     inouts.forEach(io => newNodes.push({ id: `inout_${io.name}`, type: 'inoutPort', position: {x:0, y:0}, zIndex: 10, data: { ...io } }));
-     preparedInstances.forEach(i => newNodes.push({ id: `inst_${i.name}`, type: 'instance', position: {x:0, y:0}, zIndex: 10, data: { ...i } }));
+     inputs.forEach(i => newNodes.push({ id: `in_${i.name}`, type: 'inputPort', position: {x:0, y:0}, data: { ...i } }));
+     outputs.forEach(o => newNodes.push({ id: `out_${o.name}`, type: 'outputPort', position: {x:0, y:0}, data: { ...o } }));
+     inouts.forEach(io => newNodes.push({ id: `inout_${io.name}`, type: 'inoutPort', position: {x:0, y:0}, data: { ...io } }));
+     preparedInstances.forEach(i => newNodes.push({ id: `inst_${i.name}`, type: 'instance', position: {x:0, y:0}, data: { ...i } }));
 
      if (logicInHandles.size > 0 || logicOutHandles.size > 0) {
-         const sorter = (a: string, b: string) => {
-             const iA = topModule.signals.findIndex(s => s.name === a.replace(/^(in|out)_/, ''));
-             const iB = topModule.signals.findIndex(s => s.name === b.replace(/^(in|out)_/, ''));
-             return (iA !== -1 ? iA : 999) - (iB !== -1 ? iB : 999);
-         };
          newNodes.push({ 
-             id: 'logic_core', type: 'internalLogic', position: {x:0, y:0}, zIndex: 10,
+             id: 'logic_core', type: 'internalLogic', position: {x:0, y:0}, 
              data: { name: topModule.name, inHandles: Array.from(logicInHandles).sort(sorter), outHandles: Array.from(logicOutHandles).sort(sorter) } 
          });
      }
 
      const { nodes: layN, edges: layE } = getLayoutedElements(newNodes, newEdges);
+     
+     const cached = diagramStateCache.get(topModule.name);
+     if (cached) {
+         layN.forEach(n => {
+             if (cached.positions[n.id]) n.position = cached.positions[n.id];
+         });
+         setTimeout(() => {
+             if (cached.viewport) {
+                 setViewport(cached.viewport);
+             }
+         }, 50);
+     } else {
+         setTimeout(() => fitView({ padding: 0.1, duration: 200 }), 100);
+     }
+     
      setNodes(layN); setEdges(layE);
-  }, [parsedModules, selectedModuleIdx, setNodes, setEdges]);
+  }, [parsedModules, selectedModuleIdx, setNodes, setEdges, resetToggle]);
   
   useEffect(() => {
      setEdges((eds) => eds.map(e => ({
          ...e,
          selected: !!(selectedNet && e.data?.netName === selectedNet),
-         data: { ...e.data, isHovered: selectedNet && e.data?.netName === selectedNet, hasHoveredNet: !!selectedNet },
+         zIndex: (selectedNet && e.data?.netName === selectedNet) ? 100 : (edgesOnTop ? 10 : 0),
+         data: { 
+             ...e.data, 
+             isHovered: selectedNet && e.data?.netName === selectedNet, 
+             hasHoveredNet: !!selectedNet,
+             routingMode
+         },
          animated: selectedNet && e.data?.netName === selectedNet,
      })));
-  }, [selectedNet, setEdges]);
+     
+     setNodes((nds) => nds.map(n => {
+         if (n.id === 'inputs_group' || n.id === 'outputs_group') return { ...n, zIndex: -1 };
+         return { ...n, zIndex: edgesOnTop ? 0 : 10 };
+     }));
+  }, [selectedNet, setEdges, setNodes, routingMode, edgesOnTop]);
 
   const onEdgeClick = useCallback((_: any, edge: Edge) => { if (edge.data?.netName) handleSelectNet(edge.data.netName as string); }, [handleSelectNet]);
   const onPaneClick = useCallback(() => handleSelectNet(null), [handleSelectNet]);
   const activeModule = parsedModules?.[selectedModuleIdx];
+  const activeModuleName = activeModule?.name || 'unknown';
+
+  useEffect(() => {
+      return () => {
+         const currentNodes = nodesRef.current;
+         const positions: Record<string, {x:number, y:number}> = {};
+         currentNodes.forEach(n => {
+             positions[n.id] = n.position;
+         });
+         diagramStateCache.set(activeModuleName, { positions, viewport: getViewport() });
+      };
+  }, [activeModuleName, getViewport]);
 
   return (
     <div className="w-full h-full bg-[#0a0a0c] relative flex flex-col font-sans">
-      <div className="absolute top-4 left-4 z-50 flex items-center gap-2">
-         <div className="px-4 py-2 bg-[#121216]/90 backdrop-blur border border-white/10 rounded-lg shadow-xl text-xs flex items-center gap-3">
-             <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> <span className="font-semibold text-white">Block Diagram</span></div>
-             <div className="w-px h-4 bg-white/10" />
-             {parsedModules && parsedModules.length > 1 ? (
-                 <DropdownMenu.Root>
-                    <DropdownMenu.Trigger asChild>
-                        <button className="flex items-center gap-1.5 hover:bg-white/5 px-2 py-1 -my-1 rounded transition-colors text-slate-300">
-                           <span className="text-slate-500">Module:</span> <span className="text-orange-300 font-mono font-bold">{activeModule?.name || 'N/A'}</span>
-                        </button>
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Portal>
-                        <DropdownMenu.Content align="start" className="z-50 min-w-[150px] bg-[#1e1e24] border border-[#27272a] rounded-lg shadow-xl py-1 mt-2 font-sans font-medium text-xs">
-                           {parsedModules.map((m, i) => (
-                               <DropdownMenu.Item asChild key={m.name}>
-                                   <button className="w-full text-left px-4 py-2 hover:bg-[#27272a] text-slate-300 focus:outline-none focus:bg-[#27272a]" onClick={() => setSelectedModuleIdx(i)}>
-                                      {m.name}
-                                   </button>
-                               </DropdownMenu.Item>
-                           ))}
-                        </DropdownMenu.Content>
-                    </DropdownMenu.Portal>
-                 </DropdownMenu.Root>
-             ) : (
-                 <div className="flex items-center gap-1.5"><span className="text-slate-500">Module:</span> <span className="text-orange-300 font-mono font-bold">{activeModule?.name || 'N/A'}</span></div>
-             )}
+      <div className="absolute top-4 left-4 z-50 flex flex-col gap-2">
+         <div className="flex items-center gap-2">
+           <div className="px-4 py-2 bg-[#121216]/90 backdrop-blur border border-white/10 rounded-lg shadow-xl text-xs flex items-center gap-3">
+               <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> <span className="font-semibold text-white">Block Diagram</span></div>
+               <div className="w-px h-4 bg-white/10" />
+               {parsedModules && parsedModules.length > 1 ? (
+                   <DropdownMenu.Root>
+                      <DropdownMenu.Trigger asChild>
+                          <button className="flex items-center gap-1.5 hover:bg-white/5 px-2 py-1 -my-1 rounded transition-colors text-slate-300">
+                             <span className="text-slate-500">Module:</span> <span className="text-orange-300 font-mono font-bold">{activeModule?.name || 'N/A'}</span>
+                          </button>
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Portal>
+                          <DropdownMenu.Content align="start" className="z-50 min-w-[150px] bg-[#1e1e24] border border-[#27272a] rounded-lg shadow-xl py-1 mt-2 font-sans font-medium text-xs">
+                             {parsedModules.map((m, i) => (
+                                 <DropdownMenu.Item asChild key={m.name}>
+                                     <button className="w-full text-left px-4 py-2 hover:bg-[#27272a] text-slate-300 focus:outline-none focus:bg-[#27272a]" onClick={() => setSelectedModuleIdx(i)}>
+                                        {m.name}
+                                     </button>
+                                 </DropdownMenu.Item>
+                             ))}
+                          </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                   </DropdownMenu.Root>
+               ) : (
+                   <div className="flex items-center gap-1.5"><span className="text-slate-500">Module:</span> <span className="text-orange-300 font-mono font-bold">{activeModule?.name || 'N/A'}</span></div>
+               )}
+           </div>
+         </div>
+         <div className="flex items-center gap-2 px-3 py-1.5 bg-[#121216]/80 backdrop-blur border border-white/5 rounded-lg shadow-xl w-fit">
+             <button 
+                 onClick={() => setRoutingMode('orthogonal')} 
+                 className={`px-3 py-1 text-[10px] uppercase font-bold rounded transition-colors ${routingMode === 'orthogonal' ? 'bg-blue-500/20 text-blue-400' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+             >
+                 Orthogonal
+             </button>
+             <button 
+                 onClick={() => setRoutingMode('smooth')} 
+                 className={`px-3 py-1 text-[10px] uppercase font-bold rounded transition-colors ${routingMode === 'smooth' ? 'bg-blue-500/20 text-blue-400' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+             >
+                 Curved
+             </button>
+             <div className="w-px h-3 bg-white/10 mx-1" />
+             <button 
+                 onClick={() => setEdgesOnTop(!edgesOnTop)} 
+                 className={`px-3 py-1 text-[10px] uppercase font-bold rounded transition-colors ${edgesOnTop ? 'bg-purple-500/20 text-purple-400' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+             >
+                 {edgesOnTop ? 'Wires on Top' : 'Nodes on Top'}
+             </button>
+             <div className="w-px h-3 bg-white/10 mx-1" />
+             <button 
+                 onClick={() => {
+                     diagramStateCache.delete(activeModuleName);
+                     setResetToggle(t => t + 1);
+                 }} 
+                 className="px-3 py-1 text-[10px] uppercase font-bold rounded transition-colors text-slate-500 hover:text-slate-300 hover:bg-white/5"
+             >
+                 Reset View
+             </button>
          </div>
       </div>
       
-      <div className="absolute bottom-4 left-16 z-10 p-4 bg-[#121216]/90 backdrop-blur border border-white/10 rounded-lg shadow-xl text-[10px] text-slate-400 flex flex-col gap-2.5 pointer-events-none">
+      <div className="absolute bottom-4 left-24 z-10 p-4 bg-[#121216]/90 backdrop-blur border border-white/10 rounded-lg shadow-xl text-[10px] text-slate-400 flex flex-col gap-2.5 pointer-events-none">
          <div className="font-semibold text-slate-300 mb-1">Legend</div>
          <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-blue-500" /> Busses / Wide Nets</div>
          <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-emerald-500" /> 1-Bit Wires</div>
@@ -487,7 +599,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
         nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
         onEdgeClick={onEdgeClick} onPaneClick={onPaneClick}
-        elevateEdgesOnSelect
+        elevateNodesOnSelect={false} elevateEdgesOnSelect={false}
         fitView fitViewOptions={{ padding: 0.1 }} minZoom={0.1} maxZoom={2} attributionPosition="bottom-right"
       >
         <Background color="#ffffff08" gap={20} size={1} />
