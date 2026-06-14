@@ -27,12 +27,29 @@ import { Header } from './components/Header';
 import { VerilogDiagramViewer } from './components/VerilogDiagramViewer';
 import { VerilogASTViewer } from './components/VerilogASTViewer';
 
+const ResizeObserverErrorPatch = () => {
+  useEffect(() => {
+    const handler = (e: ErrorEvent) => {
+      if (e.message === 'ResizeObserver loop completed with undelivered notifications.' || e.message === 'ResizeObserver loop limit exceeded') {
+        const errContainer = document.getElementById('webpack-dev-server-client-overlay');
+        if (errContainer) {
+            errContainer.style.display = 'none';
+        }
+        e.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener('error', handler);
+    return () => window.removeEventListener('error', handler);
+  }, []);
+  return null;
+};
+
 export default function App() {
   const [filesData, setFilesData] = useState<Record<string, {name: string, path: string, type: string, content: string, is_link?: boolean, is_modified?: boolean}>>({});
   const [activeFile, setActiveFile] = useState<string>('');
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
-  const [fileUIStates, setFileUIStates] = useState<Record<string, { isTextMode?: boolean, isDiagramMode?: boolean, vcd?: WaveformViewerViewState, diagramSelectedNet?: string }>>({});
+  const [fileUIStates, setFileUIStates] = useState<Record<string, { explorerWidth?: number, isTextMode?: boolean, isDiagramMode?: boolean, vcd?: WaveformViewerViewState, diagramSelectedNet?: string }>>({});
   const { customPrompt, customConfirm, customMultiChoice, customDialogsNode } = useCustomDialogs();
   
   const [gitStatus, setGitStatus] = useState<any>(null);
@@ -93,6 +110,13 @@ export default function App() {
   const [gitMessageContent, setGitMessageContent] = useState<any>(null);
 
   const [gitDiffModalState, setGitDiffModalState] = useState<{isOpen: boolean, content: string}>({isOpen: false, content: ''});
+
+  const isDraggingLeftPanel = useRef(false);
+  const draggingSizeRef = useRef<number>(25);
+  const [chatWidth, setChatWidth] = useState<number>(25);
+
+  const isVCDMode = activeFile && ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && !fileUIStates[activeFile]?.isTextMode;
+  const isSVMode = activeFile && ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && fileUIStates[activeFile]?.isDiagramMode;
 
   const fetchGitDiffForActiveFile = async () => {
     if (!activeFile || !filesData[activeFile]) return;
@@ -915,6 +939,7 @@ int main(int argc, char** argv) {
 
   return (
     <div className="h-screen flex flex-col font-sans">
+      <ResizeObserverErrorPatch />
       {/* Header */}
       <Header 
         activeProject={activeProject}
@@ -948,53 +973,65 @@ int main(int argc, char** argv) {
       <div className="flex-1 w-full overflow-hidden">
         <PanelGroup orientation="horizontal" id="workspace-horizontal-v5">
           {/* Left Panel */}
-          {isChatOpen && (
-            <>
-              <Panel id="chat" defaultSize={25} minSize={15} className="flex flex-col z-20 bg-[#16161a]">
-                 { (activeFile && ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && !fileUIStates[activeFile]?.isTextMode) ? (
-                    <VCDScopeTree 
-                        vcdContent={filesData[activeFile].content}
-                        viewState={fileUIStates[activeFile]?.vcd}
-                        updateViewState={(updater) => updateFileUI(activeFile, p => ({ ...p, vcd: updater(p.vcd) }))}
-                        activeFilePath={filesData[activeFile]?.path}
-                        filesData={filesData}
-                        onAddFile={handleAddFile}
-                        activeProject={activeProject}
-                    />
-                 ) : (activeFile && ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && fileUIStates[activeFile]?.isDiagramMode) ? (
-                    <VerilogASTViewer 
-                        content={filesData[activeFile]?.content || ''} 
-                        selectedNet={fileUIStates[activeFile]?.diagramSelectedNet}
-                        onSelectNet={(net) => updateFileUI(activeFile, p => ({ ...p, diagramSelectedNet: net }))}
-                    />
-                 ) : (
-                    <OllamaChat 
-                       onAddFile={handleAddFile} 
-                       activeFileId={activeFile} 
-                       activeFilePath={filesData[activeFile]?.path || null} 
-                       activeFileContent={filesData[activeFile]?.content || null} 
-                       projectContext={Object.values(filesData).find((f: any) => f.path === 'ai_context.md' || f.name === 'ai_context.md')?.content || null}
-                       onProposeMerge={setProposedMergeCode}
-                       input={activeFile ? (chatInputs[activeFile] || '') : ''}
-                       setInput={(val) => {
-                         const aid = activeFile || '_global';
-                         setChatInputs(prev => ({
-                           ...prev, 
-                           [aid]: val as unknown as string
-                         }));
-                       }}
-                       allFiles={filesData}
-                    />
-                 )}
-              </Panel>
-              <PanelResizeHandle className="w-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-col-resize z-50 relative" />
-            </>
+          {isChatOpen && isVCDMode && (
+             <>
+               <Panel key={`vcd-panel-${activeFile}`} id={`vcd-panel-${activeFile}`} defaultSize={fileUIStates[activeFile]?.explorerWidth || 25} minSize={5} onResize={(size) => { draggingSizeRef.current = size; }} className="flex flex-col z-20 bg-[#16161a]">
+                  <VCDScopeTree 
+                      vcdContent={filesData[activeFile].content}
+                      viewState={fileUIStates[activeFile]?.vcd}
+                      updateViewState={(updater) => updateFileUI(activeFile, p => ({ ...p, vcd: updater(p.vcd) }))}
+                      activeFilePath={filesData[activeFile]?.path}
+                      filesData={filesData}
+                      onAddFile={handleAddFile}
+                      activeProject={activeProject}
+                  />
+               </Panel>
+               <PanelResizeHandle className="w-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-col-resize z-50 relative" onMouseDown={() => { isDraggingLeftPanel.current = true; const handler = () => { window.setTimeout(() => { isDraggingLeftPanel.current = false; updateFileUI(activeFile, p => ({ ...p, explorerWidth: draggingSizeRef.current })); }, 0); window.removeEventListener('mouseup', handler); }; window.addEventListener('mouseup', handler); }} />
+             </>
+          )}
+
+          {isChatOpen && isSVMode && (
+             <>
+               <Panel key="sv-panel" id="sv-panel" defaultSize={25} minSize={5} className="flex flex-col z-20 bg-[#16161a]">
+                  <VerilogASTViewer 
+                      content={filesData[activeFile]?.content || ''} 
+                      selectedNet={fileUIStates[activeFile]?.diagramSelectedNet}
+                      onSelectNet={(net) => updateFileUI(activeFile, p => ({ ...p, diagramSelectedNet: net }))}
+                  />
+               </Panel>
+               <PanelResizeHandle className="w-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-col-resize z-50 relative" onMouseDown={() => { isDraggingLeftPanel.current = true; const handler = () => { window.setTimeout(() => { isDraggingLeftPanel.current = false; }, 0); window.removeEventListener('mouseup', handler); }; window.addEventListener('mouseup', handler); }} />
+             </>
+          )}
+
+          {isChatOpen && !isVCDMode && !isSVMode && (
+             <>
+               <Panel key="chat-panel" id="chat" defaultSize={chatWidth || 25} minSize={5} onResize={(size) => { draggingSizeRef.current = size; }} className="flex flex-col z-20 bg-[#16161a]">
+                  <OllamaChat 
+                     onAddFile={handleAddFile} 
+                     activeFileId={activeFile} 
+                     activeFilePath={filesData[activeFile]?.path || null} 
+                     activeFileContent={filesData[activeFile]?.content || null} 
+                     projectContext={Object.values(filesData).find((f: any) => f.path === 'ai_context.md' || f.name === 'ai_context.md')?.content || null}
+                     onProposeMerge={setProposedMergeCode}
+                     input={activeFile ? (chatInputs[activeFile] || '') : ''}
+                     setInput={(val) => {
+                       const aid = activeFile || '_global';
+                       setChatInputs(prev => ({
+                         ...prev, 
+                         [aid]: val as unknown as string
+                       }));
+                     }}
+                     allFiles={filesData}
+                  />
+               </Panel>
+               <PanelResizeHandle className="w-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-col-resize z-50 relative" onMouseDown={() => { isDraggingLeftPanel.current = true; const handler = () => { window.setTimeout(() => { isDraggingLeftPanel.current = false; setChatWidth(draggingSizeRef.current); }, 0); window.removeEventListener('mouseup', handler); }; window.addEventListener('mouseup', handler); }} />
+             </>
           )}
 
           {/* Editor Area (Middle) */}
-          <Panel id="editor" defaultSize={isChatOpen ? 55 : 80} minSize={30} className="flex flex-col min-w-0 bg-[#1e1e1e]">
+          <Panel id="editor" defaultSize={55} minSize={30} className="flex flex-col min-w-0 bg-[#1e1e1e]">
             <PanelGroup orientation="vertical" id="workspace-vertical-v5">
-              <Panel id="editor-main" defaultSize={buildDialog.isOpen ? 70 : 100} className="flex flex-col relative min-h-0">
+              <Panel id="editor-main" defaultSize={70} className="flex flex-col relative min-h-0">
                 <TabsBar
                   openedTabs={openedTabs}
                   activeFile={activeFile}

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { VCDData, VCDSignal } from '../utils/vcdParser';
-import { ZoomIn, ZoomOut, Maximize, GripVertical, Settings2, Eye, EyeOff, Activity, Box, Hash, HelpCircle, ChevronRight, ChevronLeft, Filter, Search, Magnet, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize, GripVertical, Settings2, Eye, EyeOff, Activity, Box, Hash, HelpCircle, ChevronRight, ChevronLeft, Filter, Search, Magnet, ArrowUpRight, ArrowDownRight, Trash2 } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { parseVerilog, VerilogModule } from '../utils/verilogParser';
 
@@ -26,6 +26,7 @@ export interface WaveformViewerViewState {
   offsetY: number;
   tracks: TrackConfig[];
   selectedModule?: string;
+  collapsedPaths?: Record<string, boolean>;
 }
 
 interface WaveformViewerProps {
@@ -87,11 +88,11 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange, filesData }:
   useEffect(() => {
     const timer = setTimeout(() => {
       if (onViewStateChangeRef.current) {
-        onViewStateChangeRef.current({ scale, offsetX, offsetY, tracks, selectedModule });
+        onViewStateChangeRef.current({ ...(viewState || {}), scale, offsetX, offsetY, tracks, selectedModule });
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [scale, offsetX, offsetY, tracks, selectedModule]);
+  }, [scale, offsetX, offsetY, tracks, selectedModule, viewState]);
   
   // Sync external track changes down
   useEffect(() => {
@@ -126,7 +127,7 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange, filesData }:
               uniqueId: coreId,
               signal: s,
               format: s.width > 1 ? 'hex' as const : 'bin' as const,
-              isHidden: false
+              isHidden: true
            };
            finalTracks.push(newTrack);
            prevTracksMap.set(coreId, newTrack);
@@ -717,6 +718,14 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange, filesData }:
         <h3 className="text-emerald-400 font-medium text-sm shrink-0 truncate max-w-[200px]">Waveform Viewer</h3>
         <span className="text-xs text-slate-500 bg-black/30 rounded px-2 py-1 shrink-0">Time: {vcd.timescale}</span>
         
+        <button 
+           className="text-xs text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 px-2 py-1 rounded flex items-center gap-1 shrink-0 transition-colors"
+           onClick={() => setTracks(p => p.map(x => ({...x, isHidden: true})))}
+           title="Clear All Tracks"
+        >
+           <Trash2 className="w-3 h-3" /> Clear
+        </button>
+        
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button className="text-xs text-slate-300 bg-white/5 hover:bg-white/10 px-2 py-1 rounded flex items-center gap-1 shrink-0 transition-colors">
@@ -726,6 +735,15 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange, filesData }:
           <DropdownMenu.Portal>
             <DropdownMenu.Content align="start" className="z-50 min-w-[200px] bg-[#1e1e24] border border-[#27272a] rounded shadow-xl py-1 max-h-[300px] overflow-y-auto">
                <div className="px-3 py-1 text-xs text-slate-500 font-medium">Toggle Visibility</div>
+               <DropdownMenu.Item asChild>
+                 <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[#27272a] text-rose-400 flex items-center gap-2"
+                   onClick={(e) => { e.preventDefault(); setTracks(p => p.map(x => ({...x, isHidden: true}))); }}
+                 >
+                   <Trash2 className="w-3 h-3" />
+                   <span>Clear All</span>
+                 </button>
+               </DropdownMenu.Item>
+               <div className="h-px bg-[#27272a] my-1" />
                <DropdownMenu.Item asChild>
                  <button className="w-full px-3 py-1.5 text-xs text-left hover:bg-[#27272a] text-slate-300 flex items-center justify-between"
                    onClick={(e) => { e.preventDefault(); setFilterMode(filterMode === 'all' ? 'clean' : 'all'); }}
@@ -888,6 +906,13 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange, filesData }:
                              {currentVal}
                            </span>
                          )}
+                         <button 
+                           className="p-1 opacity-0 group-hover:opacity-100 text-rose-400/50 hover:text-rose-400 shrink-0 outline-none transition-colors"
+                           onClick={(e) => { e.stopPropagation(); setTracks(p => p.map(x => x.uniqueId === t.uniqueId ? {...x, isHidden: true} : x)); }}
+                           title="Hide Signal"
+                         >
+                            <EyeOff className="w-3 h-3" />
+                         </button>
                          <DropdownMenu.Root>
                             <DropdownMenu.Trigger asChild>
                                <button className="p-1 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-white shrink-0 outline-none">
@@ -942,10 +967,10 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange, filesData }:
 
         {/* Canvas Workspace */}
         <div 
-           className="flex-1 flex flex-col h-full relative border-l border-black"
+           className="flex-1 flex flex-col h-full relative border-l border-black overflow-hidden"
         >
           <div 
-             className="flex-1 relative cursor-crosshair"
+             className="flex-1 relative cursor-crosshair overflow-hidden"
              ref={canvasWrapperRef}
              onMouseDown={handleMouseDown}
              onMouseMove={handleMouseMove}

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { VCDData, parseVCD } from '../utils/vcdParser';
-import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Hash, Type, Save, List, Check, X } from 'lucide-react';
+import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Hash, Type, Save, List, Check, X, ArrowRightToLine, ArrowLeftFromLine, ArrowRightLeft, FastForward, Cpu, Database } from 'lucide-react';
 import { WaveformViewerViewState } from './WaveformViewer';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { parseVerilog, VerilogModule } from '../utils/verilogParser';
@@ -107,7 +107,7 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
        }
 
        if (!node.verilogModule && node.signals.length > 0 && parsedModules.length > 0) {
-           const instanceSigNames = new Set(node.signals.map((s: any) => s.name));
+           const instanceSigNames = new Set(node.signals.map((s: any) => s.name.split('[')[0].trim()));
            let bestMatch: VerilogModule | null = null;
            let maxIntersection = 0;
            for (const mod of parsedModules) {
@@ -131,13 +131,16 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
     return tree;
   }, [vcd, parsedModules]);
 
-  const [collapsedPaths, setCollapsedPaths] = useState<Record<string, boolean>>({});
+  const collapsedPaths = viewState?.collapsedPaths || {};
+  const setCollapsedPaths = (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => {
+      updateViewState(prev => ({ ...prev, collapsedPaths: updater(prev?.collapsedPaths || {}) }));
+  };
 
   const toggleTrack = (signalId: string, signalModule: string, signalName: string, signal: any) => {
      updateViewState(prev => {
         let tracks = prev?.tracks || [];
         const uniqueId = `${signalId}_${signalName}_${signalModule}`;
-        const existingInfo = tracks.find((t: any) => !t.uniqueId.includes('_filler_') ? t.uniqueId.startsWith(`${signalId}_${signalName}`) : false);
+        const existingInfo = tracks.find((t: any) => !t.uniqueId.includes('_filler_') ? (t.uniqueId === uniqueId || t.uniqueId.startsWith(uniqueId + '_')) : false);
         
         let newTracks = [...tracks];
         if (existingInfo) {
@@ -154,34 +157,92 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
      });
   };
 
+  const setSignalsVisibility = (signals: any[], forceVisible: boolean) => {
+      updateViewState(prev => {
+         let tracks = prev?.tracks || [];
+         let newTracks = [...tracks];
+         
+         signals.forEach(sig => {
+            const uniqueId = `${sig.id}_${sig.name}_${sig.module}`;
+            const existingInfo = newTracks.find((t: any) => !t.uniqueId.includes('_filler_') && (t.uniqueId === uniqueId || t.uniqueId.startsWith(uniqueId + '_')));
+            if (existingInfo) {
+                newTracks = newTracks.map((t: any) => t.uniqueId === existingInfo.uniqueId ? { ...t, isHidden: !forceVisible } : t);
+            } else if (forceVisible) {
+                newTracks.push({
+                   uniqueId,
+                   signal: sig,
+                   format: sig.width > 1 ? 'hex' : 'bin',
+                   isHidden: false
+                });
+            }
+         });
+         return { ...prev, tracks: newTracks };
+      });
+  };
+
+  const getAllSignalsInNode = (n: any): any[] => {
+       let res: any[] = [...n.signals];
+       Object.values(n.children).forEach((child: any) => {
+           res = res.concat(getAllSignalsInNode(child));
+       });
+       return res;
+  };
+
   const renderTree = (node: any, depth = 0) => {
     const isCollapsed = collapsedPaths[node.path];
     const hasChildren = Object.keys(node.children).length > 0;
     
+    const checkVisibility = (sigs: any[]) => {
+        let visibleCount = 0;
+        sigs.forEach(sig => {
+            const uniqueId = `${sig.id}_${sig.name}_${sig.module}`;
+            const track = (viewState?.tracks || []).find((t: any) => !t.uniqueId.includes('_filler_') && (t.uniqueId === uniqueId || t.uniqueId.startsWith(uniqueId + '_')));
+            if (track && !track.isHidden) visibleCount++;
+        });
+        return { visibleCount, totalCount: sigs.length };
+    };
+    
+    const branchSignals = node.path ? getAllSignalsInNode(node) : [];
+    const branchVis = checkVisibility(branchSignals);
+    
     return (
-      <div key={node.path || 'root'} className="flex flex-col">
+       <div key={node.path || 'root'} className="flex flex-col">
          {node.path && (
-           <div 
-             className="flex items-center gap-1.5 py-1 px-2 hover:bg-white/5 cursor-pointer text-sm text-slate-300"
-             style={{ paddingLeft: `${depth * 12 + 8}px` }}
-             onClick={() => setCollapsedPaths(p => ({ ...p, [node.path]: !isCollapsed }))}
+           <div className="flex items-center group w-max">
+              <div className="flex items-center gap-1.5 py-1 px-2 hover:bg-white/5 cursor-pointer text-sm text-slate-200 select-none pr-3 rounded"
+              onClick={() => setCollapsedPaths(p => ({ ...p, [node.path]: !isCollapsed }))}
            >
              {hasChildren ? (
-                isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-             ) : <div className="w-3.5" />}
-             <Box className="w-3.5 h-3.5 text-emerald-400" />
-             <span className="truncate">{node.name}</span>
-             {node.verilogModule && <span className="text-[10px] text-slate-500 ml-2">({node.verilogModule.name})</span>}
+                isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />
+             ) : <div className="w-4" />}
+             {node.verilogModule ? (
+                 <Cpu className="w-3.5 h-3.5 text-indigo-400 opacity-80" />
+             ) : (
+                 <Box className="w-3.5 h-3.5 text-cyan-500 opacity-80" />
+             )}
+             <span className="font-medium group-hover:text-white transition-colors">{node.name}</span>
+             {node.verilogModule && <span className="text-[11px] text-slate-500 ml-1">({node.verilogModule.name})</span>}
+            </div>
+            {branchSignals.length > 0 && (
+                 <div 
+                   className="opacity-0 group-hover:opacity-100 p-1 ml-1 cursor-pointer transition-all rounded hover:bg-white/10"
+                   onClick={(e) => { e.stopPropagation(); setSignalsVisibility(branchSignals, branchVis.visibleCount === 0); }}
+                   title={branchVis.visibleCount > 0 ? "Hide all" : "Show all"}
+                 >
+                   {branchVis.visibleCount > 0 ? <Eye className="w-4 h-4 text-emerald-400" /> : <EyeOff className="w-4 h-4 text-slate-500" />}
+                 </div>
+            )}
            </div>
          )}
          
          {(!isCollapsed || !node.path) && (
-           <div className="flex flex-col">
-             {Object.values(node.children).map((child: any) => renderTree(child, node.path ? depth + 1 : 0))}
+           <div className={`flex flex-col ${node.path ? 'pl-6 border-l border-white/5 ml-1.5 mt-0.5' : ''}`}>
+             {Object.values(node.children).map((child: any) => renderTree(child, depth + 1))}
              
              {(() => {
                  const inputs: any[] = [];
                  const outputs: any[] = [];
+                 const inouts: any[] = [];
                  const regs: any[] = [];
                  const wires: any[] = [];
                  const others: any[] = [];
@@ -189,17 +250,21 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
                  node.signals.forEach((sig: any) => {
                      let matched = false;
                      if (node.verilogModule) {
-                         const vSig = node.verilogModule.signals.find((s: any) => s.name === sig.name);
+                         const cleanSigName = sig.name.split('[')[0].trim();
+                         const vSig = node.verilogModule.signals.find((s: any) => s.name === cleanSigName);
                          if (vSig) {
                              matched = true;
                              if (vSig.ioType === 'input') inputs.push(sig);
-                             else if (vSig.ioType === 'output' || vSig.ioType === 'inout') outputs.push(sig);
+                             else if (vSig.ioType === 'output') outputs.push(sig);
+                             else if (vSig.ioType === 'inout') inouts.push(sig);
                              else if (vSig.type === 'reg' || vSig.type === 'logic') regs.push(sig);
                              else wires.push(sig);
                          }
                      }
                      if (!matched) {
-                         others.push(sig);
+                         if (sig.type === 'reg' || sig.type === 'logic') regs.push(sig);
+                         else if (sig.type === 'wire') wires.push(sig);
+                         else others.push(sig);
                      }
                  });
 
@@ -207,52 +272,64 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
                      if (sigs.length === 0) return null;
                      const groupPath = `${node.path || 'root'}._g_${title}`;
                      const groupCollapsed = collapsedPaths[groupPath] ?? defaultCollapsed;
+                     const groupVis = checkVisibility(sigs);
                      
                      return (
                        <div key={groupPath} className="flex flex-col">
-                          <div 
-                            className="flex items-center gap-1.5 py-1 px-2 hover:bg-white/5 cursor-pointer text-xs text-slate-400 font-medium"
-                            style={{ paddingLeft: `${(node.path ? depth + 1 : 0) * 12 + 16}px` }}
-                            onClick={() => setCollapsedPaths(p => ({ ...p, [groupPath]: !groupCollapsed }))}
-                          >
-                            {groupCollapsed ? <ChevronRight className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
-                            <span className="truncate">{title}</span>
-                            <span className="opacity-50 text-[10px]">({sigs.length})</span>
+                          <div className="flex items-center group/group w-max">
+                             <div 
+                               className="flex items-center gap-1.5 py-1 px-2 hover:bg-white/5 cursor-pointer text-[13px] text-slate-300 font-semibold select-none rounded pr-2"
+                               onClick={() => setCollapsedPaths(p => ({ ...p, [groupPath]: !groupCollapsed }))}
+                             >
+                               {groupCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
+                               <span className="truncate">{title}</span>
+                             </div>
+                             <div 
+                               className="opacity-0 group-hover/group:opacity-100 p-1 ml-1 cursor-pointer transition-all rounded hover:bg-white/10"
+                               onClick={(e) => { e.stopPropagation(); setSignalsVisibility(sigs, groupVis.visibleCount === 0); }}
+                               title={groupVis.visibleCount > 0 ? "Hide all" : "Show all"}
+                             >
+                               {groupVis.visibleCount > 0 ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
+                             </div>
                           </div>
-                          {!groupCollapsed && sigs.map(sig => {
-                              const uniqueIdPrefix = `${sig.id}_${sig.name}`;
-                              const track = (viewState?.tracks || []).find((t: any) => !t.uniqueId.includes('_filler_') && t.uniqueId.startsWith(uniqueIdPrefix));
-                              const isVisible = track && !track.isHidden;
-                              
-                              return (
-                                <div 
-                                  key={sig.name}
-                                  className="flex items-center justify-between py-1 px-2 hover:bg-white/5 cursor-pointer text-sm group"
-                                  style={{ paddingLeft: `${(node.path ? depth + 1 : 0) * 12 + 28}px` }}
-                                  onClick={(e) => { e.stopPropagation(); toggleTrack(sig.id, sig.module, sig.name, sig); }}
-                                >
-                                  <div className="flex items-center gap-1.5 overflow-hidden text-slate-400 group-hover:text-slate-200">
-                                     {iconEl}
-                                     {sig.width > 1 && <span className="opacity-70 text-[10px]">[{sig.width}]</span>}
-                                     <span className="truncate">{sig.name}</span>
-                                  </div>
-                                  <div className="opacity-0 group-hover:opacity-100 pr-2">
-                                     {isVisible ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
-                                  </div>
-                                </div>
-                              );
-                          })}
+                          {!groupCollapsed && (
+                            <div className="flex flex-col pl-6 border-l border-white/5 ml-1.5 mt-0.5">
+                                {sigs.map(sig => {
+                                  const uniqueId = `${sig.id}_${sig.name}_${sig.module}`;
+                                  const track = (viewState?.tracks || []).find((t: any) => !t.uniqueId.includes('_filler_') && (t.uniqueId === uniqueId || t.uniqueId.startsWith(uniqueId + '_')));
+                                  const isVisible = track && !track.isHidden;
+                                  
+                                  return (
+                                    <div 
+                                      key={sig.name}
+                                      className="flex items-center justify-between py-1 px-2 hover:bg-white/5 cursor-pointer text-[13px] group select-none w-fit rounded"
+                                      onClick={(e) => { e.stopPropagation(); toggleTrack(sig.id, sig.module, sig.name, sig); }}
+                                    >
+                                      <div className="flex items-center gap-1.5 overflow-hidden text-slate-300 group-hover:text-white transition-colors">
+                                         {iconEl}
+                                         <span className="truncate">{sig.name}</span>
+                                         {sig.width > 1 && <span className="text-[10px] uppercase border px-1 rounded block text-slate-500 border-slate-700/50 bg-slate-800/30">[{sig.width}]</span>}
+                                      </div>
+                                      <div className={`transition-opacity pl-4 pr-2 ${isVisible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                         {isVisible ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500 opacity-50" />}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )}
                        </div>
                      );
                  };
 
                  return (
                     <>
-                       {renderGroup('Inputs', inputs, <ChevronRight className="w-3.5 h-3.5 text-blue-400 shrink-0" />)}
-                       {renderGroup('Outputs', outputs, <ChevronRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />)}
-                       {renderGroup('Registers', regs, <Box className="w-3.5 h-3.5 text-orange-400 shrink-0" />)}
-                       {renderGroup('Wires', wires, <Hash className="w-3.5 h-3.5 text-slate-400 shrink-0" />)}
-                       {renderGroup('Other / Internal', others, <Hash className="w-3.5 h-3.5 text-slate-500 shrink-0" />, true)}
+                       {renderGroup(`Inputs (${inputs.length})`, inputs, <ArrowRightToLine className="w-3.5 h-3.5 text-blue-400 opacity-80 shrink-0" />)}
+                       {renderGroup(`Outputs (${outputs.length})`, outputs, <ArrowLeftFromLine className="w-3.5 h-3.5 text-emerald-400 opacity-80 shrink-0" />)}
+                       {renderGroup(`Inouts (${inouts.length})`, inouts, <ArrowRightLeft className="w-3.5 h-3.5 text-purple-400 opacity-80 shrink-0" />, false)}
+                       {renderGroup(`Wires (${wires.length})`, wires, <div className="w-3.5 h-3.5 rounded-sm border border-slate-500 text-slate-400 flex items-center justify-center text-[9px] font-bold font-mono shrink-0">w</div>, false)}
+                       {renderGroup(`Registers (${regs.length})`, regs, <div className="w-3.5 h-3.5 rounded-sm border border-orange-500 text-orange-400 flex items-center justify-center text-[9px] font-bold font-mono shrink-0">r</div>, false)}
+                       {renderGroup(`Other (${others.length})`, others, <FastForward className="w-3.5 h-3.5 text-slate-400 opacity-80 shrink-0" />, true)}
                     </>
                  );
              })()}
@@ -263,9 +340,12 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
   };
   
   return (
-    <div className="flex flex-col w-full h-full bg-[#121214] border-r border-[#27272a] text-sm font-sans flex-1 overflow-hidden">
-       <div className="h-10 border-b border-[#27272a] bg-[#16161a] flex items-center justify-between px-4 shrink-0 font-medium text-slate-300">
-          <span>VCD Scopes</span>
+    <div className="flex flex-col w-full h-full bg-[#121216] border-r border-[#27272a] font-mono flex-1 overflow-hidden shadow-inner">
+       <div className="h-10 border-b border-[#27272a] bg-[#16161a] flex items-center justify-between px-4 shrink-0 font-medium text-slate-300 font-sans text-sm">
+          <div className="flex items-center gap-2">
+             <Database className="w-4 h-4 text-cyan-500" />
+             <span>Signals Explorer</span>
+          </div>
           <div className="flex items-center gap-1">
              <button title="Save Configuration" onClick={() => setIsSavingDialog(!isSavingDialog)} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-emerald-400 transition-colors">
                 <Save className="w-3.5 h-3.5" />
@@ -310,7 +390,7 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
           </div>
        )}
 
-       <div className="flex-1 overflow-y-auto w-full pb-4">
+       <div className="flex-1 overflow-y-auto w-full pb-8 pt-4 px-2">
           {renderTree(root)}
        </div>
     </div>

@@ -24,3 +24,12 @@ It is specifically built for working with Verilog and Intel Quartus Prime files.
    - **`output` ports** of the top module MUST be rendered as horizontal rectangles on the RIGHTmost side of the screen (`x: maxX + 150`) in a column. Visually, they must have a chevron left edge (accepting the incoming wire) and the wire connects on their left.
    - **`inout` ports** MUST be rendered with a chevron shape on both left and right edges.
    - Do NOT just group them all inside or directly attached to `Logic Core`. They are conceptually the external boundaries (pins) of the module being viewed.
+
+8. **ReactFlow State Persistence Rule**: 
+   - NEVER handle ReactFlow view/node position state caching via component unmount cleanup functions, as this wipes the user's manual dragging layout when toggling between tabs or code view.
+   - ALWAYS use explicit `onNodeDragStop` and `onMoveEnd` event handlers on the `<ReactFlow>` component to immediately patch/save explicit positions and viewport coordinates into a persistent global/module-scoped map (e.g. `diagramStateCache`).
+
+# Verilog and VCD Parsing Rules
+9. **Matching VCD and Verilog Signals**:
+   - VCD output signals often contain bit slice dimensions appended to their names (e.g., `count[7:0]`), whereas the statically parsed Verilog AST stores the normalized signal name (e.g., `count`).
+   - ALWAYS strip bit slice indexing strings (using `.split('[')[0].trim()`) from the VCD signal name before matching or grouping it against `VerilogModule` signals to correctly identify its `ioType` (input/output) or internal type. Failure to do so will map inputs/outputs to "Others" due to string mismatch.

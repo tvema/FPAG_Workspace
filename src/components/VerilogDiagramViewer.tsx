@@ -511,16 +511,21 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
   const activeModule = parsedModules?.[selectedModuleIdx];
   const activeModuleName = activeModule?.name || 'unknown';
 
-  useEffect(() => {
-      return () => {
-         const currentNodes = nodesRef.current;
-         const positions: Record<string, {x:number, y:number}> = {};
-         currentNodes.forEach(n => {
-             positions[n.id] = n.position;
-         });
-         diagramStateCache.set(activeModuleName, { positions, viewport: getViewport() });
-      };
-  }, [activeModuleName, getViewport]);
+  const onNodeDragStop = useCallback((event: any, node: Node) => {
+      const activeModuleName = parsedModules?.[selectedModuleIdx]?.name;
+      if (!activeModuleName) return;
+      let cached = diagramStateCache.get(activeModuleName);
+      if (!cached) { cached = { positions: {} }; diagramStateCache.set(activeModuleName, cached); }
+      cached.positions[node.id] = node.position;
+  }, [parsedModules, selectedModuleIdx]);
+
+  const onMoveEnd = useCallback((event: any, viewport: any) => {
+      const activeModuleName = parsedModules?.[selectedModuleIdx]?.name;
+      if (!activeModuleName) return;
+      let cached = diagramStateCache.get(activeModuleName);
+      if (!cached) { cached = { positions: {} }; diagramStateCache.set(activeModuleName, cached); }
+      cached.viewport = viewport;
+  }, [parsedModules, selectedModuleIdx]);
 
   return (
     <div className="w-full h-full bg-[#0a0a0c] relative flex flex-col font-sans">
@@ -598,6 +603,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
       <ReactFlow
         nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+        onNodeDragStop={onNodeDragStop} onMoveEnd={onMoveEnd}
         onEdgeClick={onEdgeClick} onPaneClick={onPaneClick}
         elevateNodesOnSelect={false} elevateEdgesOnSelect={false}
         fitView fitViewOptions={{ padding: 0.1 }} minZoom={0.1} maxZoom={2} attributionPosition="bottom-right"
