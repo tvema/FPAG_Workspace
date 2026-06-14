@@ -7,6 +7,7 @@ import { useInterval } from './hooks/useInterval';
 import { useCustomDialogs } from './hooks/useCustomDialogs';
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { OllamaChat } from './components/OllamaChat';
+
 import { GitCommitDialog } from './components/GitCommitDialog';
 import { MessageOverlay } from './components/MessageOverlay';
 import { DiffViewerModal } from './components/DiffViewerModal';
@@ -49,7 +50,8 @@ export default function App() {
   const [activeFile, setActiveFile] = useState<string>('');
   const [openedTabs, setOpenedTabs] = useState<string[]>([]);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
-  const [fileUIStates, setFileUIStates] = useState<Record<string, { explorerWidth?: number, isTextMode?: boolean, isDiagramMode?: boolean, vcd?: WaveformViewerViewState, diagramSelectedNet?: string }>>({});
+  const [fileUIStates, setFileUIStates] = useState<Record<string, { explorerWidth?: number, isTextMode?: boolean, isDiagramMode?: boolean, vcd?: WaveformViewerViewState, diagramSelectedNet?: string, diagramSelectedModule?: string }>>({});
+  const [diagramHistory, setDiagramHistory] = useState<{fileId: string, moduleName?: string}[]>([]);
   const { customPrompt, customConfirm, customMultiChoice, customDialogsNode } = useCustomDialogs();
   
   const [gitStatus, setGitStatus] = useState<any>(null);
@@ -116,7 +118,8 @@ export default function App() {
   const [chatWidth, setChatWidth] = useState<number>(25);
 
   const isVCDMode = activeFile && ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && !fileUIStates[activeFile]?.isTextMode;
-  const isSVMode = activeFile && ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && fileUIStates[activeFile]?.isDiagramMode;
+  const isSVMode = activeFile && (['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || filesData[activeFile]?.name?.endsWith('.v') || filesData[activeFile]?.name?.endsWith('.sv')) && fileUIStates[activeFile]?.isDiagramMode;
+  const isMarkdownMode = activeFile && (['markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').endsWith('.md')) && !fileUIStates[activeFile]?.isTextMode;
 
   const fetchGitDiffForActiveFile = async () => {
     if (!activeFile || !filesData[activeFile]) return;
@@ -139,27 +142,43 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (lineJumpTarget !== null && editorRef.current) {
-         setTimeout(() => { // wait for editor to apply model if active file just changed
-             const model = editorRef.current.getModel();
-             if (!model) return;
-             if (typeof lineJumpTarget === 'number') {
-                 editorRef.current.revealLineInCenter(lineJumpTarget);
-                 editorRef.current.setPosition({ lineNumber: lineJumpTarget, column: 1 });
-                 editorRef.current.focus();
-                 setLineJumpTarget(null);
-             } else {
-                 const searchString = lineJumpTarget.split('\n')[0].trim();
-                 const matches = model.findMatches(searchString, false, false, false, null, true);
-                 if (matches && matches.length > 0) {
-                     editorRef.current.revealLineInCenter(matches[0].range.startLineNumber);
-                     editorRef.current.setPosition({ lineNumber: matches[0].range.startLineNumber, column: 1 });
+    let attempts = 0;
+    const attemptJump = () => {
+         if (lineJumpTarget !== null && editorRef.current) {
+             setTimeout(() => { // wait for editor to apply model if active file just changed
+                 const model = editorRef.current.getModel();
+                 if (!model || model.isDisposed()) {
+                     if (attempts < 10) { attempts++; setTimeout(attemptJump, 200); }
+                     return;
+                 }
+                 if (typeof lineJumpTarget === 'number') {
+                     editorRef.current.revealLineInCenter(lineJumpTarget);
+                     editorRef.current.setPosition({ lineNumber: lineJumpTarget, column: 1 });
                      editorRef.current.focus();
                      setLineJumpTarget(null);
+                 } else {
+                     let searchString = lineJumpTarget as string;
+                     let isRegex = false;
+                     if (searchString.startsWith('REGEX:')) {
+                         searchString = searchString.substring(6);
+                         isRegex = true;
+                     } else {
+                         searchString = searchString.split('\n')[0].trim();
+                     }
+                     const matches = model.findMatches(searchString, false, isRegex, false, null, true);
+                     if (matches && matches.length > 0) {
+                         editorRef.current.revealLineInCenter(matches[0].range.startLineNumber);
+                         editorRef.current.setPosition({ lineNumber: matches[0].range.startLineNumber, column: 1 });
+                         editorRef.current.focus();
+                     }
+                     setLineJumpTarget(null);
                  }
-             }
-         }, 150);
-    }
+             }, 150);
+         } else if (lineJumpTarget !== null) {
+             if (attempts < 15) { attempts++; setTimeout(attemptJump, 200); }
+         }
+    };
+    attemptJump();
   }, [activeFile, lineJumpTarget]);
 
   const handleEditorDidMount = React.useCallback((editor: any) => {
@@ -1050,51 +1069,85 @@ int main(int argc, char** argv) {
                 />
           <div className="flex-1 overflow-hidden relative">
             {activeFile ? (
-              ['vcd'].includes(filesData[activeFile]?.type?.toLowerCase() || '') && !fileUIStates[activeFile]?.isTextMode ? (
-                <div className="w-full h-full">
-                  <VCDWrapper 
-                      key={activeFile}
-                      content={filesData[activeFile]?.content || ''} 
-                      viewState={fileUIStates[activeFile]?.vcd}
-                      onViewStateChange={(vcd) => updateFileUI(activeFile, p => ({ ...p, vcd }))}
-                      filesData={filesData}
+              <>
+                {isVCDMode && (
+                  <div className="w-full h-full">
+                    <VCDWrapper 
+                        key={activeFile}
+                        content={filesData[activeFile]?.content || ''} 
+                        viewState={fileUIStates[activeFile]?.vcd}
+                        onViewStateChange={(vcd) => updateFileUI(activeFile, p => ({ ...p, vcd }))}
+                        filesData={filesData}
+                    />
+                  </div>
+                )}
+                {isMarkdownMode && (
+                  <MarkdownWrapper content={filesData[activeFile]?.content || ''} />
+                )}
+                {isSVMode && (
+                  <div className="w-full h-full">
+                     <VerilogDiagramViewer 
+                         content={filesData[activeFile]?.content || ''}
+                         selectedNet={fileUIStates[activeFile]?.diagramSelectedNet}
+                         onSelectNet={(net) => updateFileUI(activeFile, p => ({ ...p, diagramSelectedNet: net }))}
+                         allFilesData={filesData}
+                         initialModuleName={fileUIStates[activeFile]?.diagramSelectedModule}
+                         onSelectModule={(moduleName) => updateFileUI(activeFile, p => ({ ...p, diagramSelectedModule: moduleName }))}
+                         onNavigateToFile={(targetFileId, moduleName, currentModuleName) => {
+                             setDiagramHistory(prev => [...prev, { fileId: activeFile, moduleName: currentModuleName }]);
+                             if (!openedTabs.includes(targetFileId)) {
+                                 setOpenedTabs(prev => [...prev, targetFileId]);
+                             }
+                             updateFileUI(targetFileId, p => ({ ...p, isDiagramMode: true, diagramSelectedModule: moduleName }));
+                             setActiveFile(targetFileId);
+                         }}
+                         hasDiagramHistory={diagramHistory.length > 0}
+                         onDiagramBack={() => {
+                             if (diagramHistory.length === 0) return;
+                             const last = diagramHistory[diagramHistory.length - 1];
+                             
+                             setDiagramHistory(prev => prev.slice(0, -1));
+                             
+                             if (!openedTabs.includes(last.fileId)) {
+                                 setOpenedTabs(tabs => [...tabs, last.fileId]);
+                             }
+                             updateFileUI(last.fileId, p => ({ ...p, isDiagramMode: true, diagramSelectedModule: last.moduleName }));
+                             setActiveFile(last.fileId);
+                         }}
+                         onNavigateToCode={(moduleName) => {
+                             updateFileUI(activeFile, p => ({ ...p, isDiagramMode: false }));
+                             setLineJumpTarget(`REGEX:^\\s*module\\s+${moduleName}\\b`);
+                         }}
+                     />
+                  </div>
+                )}
+                <div className={`w-full h-full ${(isVCDMode || isMarkdownMode || isSVMode) ? 'hidden' : 'block'}`}>
+                  <Editor
+                    height="100%"
+                    theme={editorTheme}
+                    onMount={handleEditorDidMount}
+                    path={activeFile}
+                    language={
+                      ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :
+                      ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'tcl' :
+                      ['makefile', 'mak', 'mk', 'template'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').toLowerCase() === 'makefile' || (filesData[activeFile]?.name || '').toLowerCase().includes('makefile') ? 'makefile' :
+                      ['c', 'h'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'c' :
+                      ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'cpp' :
+                      ['ts', 'tsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'typescript' :
+                      ['js', 'jsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'javascript' :
+                      ['json'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'json' :
+                      ['md', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'markdown' :
+                      ['css'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'css' :
+                      ['html'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'html' :
+                      ['sh', 'bash'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'shell' : 'plaintext'
+                    }
+                    beforeMount={handleEditorBeforeMount}
+                    value={filesData[activeFile]?.content || ''}
+                    onChange={handleEditorChange}
+                    options={editorOptions}
                   />
                 </div>
-              ) : (['markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').endsWith('.md')) && !fileUIStates[activeFile]?.isTextMode ? (
-                <MarkdownWrapper content={filesData[activeFile]?.content || ''} />
-              ) : (['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || filesData[activeFile]?.name?.endsWith('.v') || filesData[activeFile]?.name?.endsWith('.sv')) && fileUIStates[activeFile]?.isDiagramMode ? (
-                <div className="w-full h-full">
-                   <VerilogDiagramViewer 
-                       content={filesData[activeFile]?.content || ''}
-                       selectedNet={fileUIStates[activeFile]?.diagramSelectedNet}
-                       onSelectNet={(net) => updateFileUI(activeFile, p => ({ ...p, diagramSelectedNet: net }))}
-                   />
-                </div>
-              ) : (
-                <Editor
-                  height="100%"
-                  theme={editorTheme}
-                  onMount={handleEditorDidMount}
-                  language={
-                    ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :
-                    ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'tcl' :
-                    ['makefile', 'mak', 'mk', 'template'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').toLowerCase() === 'makefile' || (filesData[activeFile]?.name || '').toLowerCase().includes('makefile') ? 'makefile' :
-                    ['c', 'h'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'c' :
-                    ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'cpp' :
-                    ['ts', 'tsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'typescript' :
-                    ['js', 'jsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'javascript' :
-                    ['json'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'json' :
-                    ['md', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'markdown' :
-                    ['css'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'css' :
-                    ['html'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'html' :
-                    ['sh', 'bash'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'shell' : 'plaintext'
-                  }
-                  beforeMount={handleEditorBeforeMount}
-                  value={filesData[activeFile]?.content || ''}
-                  onChange={handleEditorChange}
-                  options={editorOptions}
-                />
-              )
+              </>
             ) : (
               <div className="flex items-center justify-center h-full text-slate-600 text-sm">Select a file to edit</div>
             )}

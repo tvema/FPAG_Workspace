@@ -11,6 +11,19 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
 const diagramStateCache = new Map<string, { positions: Record<string, { x: number, y: number }>, viewport?: any }>();
 
+interface VerilogDiagramViewerProps {
+  content: string;
+  selectedNet?: string;
+  onSelectNet?: (net: string | null) => void;
+  allFilesData?: Record<string, any>;
+  onNavigateToFile?: (fileId: string, moduleName: string, currentModuleName?: string) => void;
+  initialModuleName?: string;
+  onSelectModule?: (moduleName: string) => void;
+  hasDiagramHistory?: boolean;
+  onDiagramBack?: () => void;
+  onNavigateToCode?: (moduleName: string) => void;
+}
+
 const WireEdge = memo(({
   id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style = {}, data, selected
 }: EdgeProps) => {
@@ -132,7 +145,7 @@ const InternalLogicNode = ({ data }: NodeProps) => {
   const outHandles = (data.outHandles as string[]) || [];
 
   return (
-    <div className="bg-[#1a1a20] border-2 border-dashed border-slate-600/50 rounded-xl p-8 shadow-2xl min-w-[300px] flex flex-col items-center justify-center relative group hover:border-slate-500/80 transition-colors" style={{ minHeight: `${Math.max(200, Math.max(inHandles.length, outHandles.length) * 24)}px` }}>
+    <div className="bg-[#1a1a20] border-2 border-dashed border-slate-600/50 rounded-xl p-8 shadow-2xl min-w-[300px] flex flex-col items-center justify-center relative group hover:border-slate-500/80 transition-colors cursor-pointer" title="Double-click to view source code" style={{ minHeight: `${Math.max(200, Math.max(inHandles.length, outHandles.length) * 24)}px` }}>
       {inHandles.map((h, i) => {
          const top = `${((i + 1) / (inHandles.length + 1)) * 100}%`;
          return (
@@ -166,7 +179,7 @@ const InstanceNode = ({ data }: NodeProps) => {
   const outPorts = conns.filter(c => c.direction === 'source');
   
   return (
-    <div className={`bg-[#121216] border ${hasUnconnected ? 'border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 'border-orange-500/40 shadow-xl'} rounded-lg min-w-[240px] flex flex-col font-sans overflow-hidden transition-shadow`}>
+    <div className={`bg-[#121216] border ${hasUnconnected ? 'border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 'border-orange-500/40 shadow-xl'} rounded-lg min-w-[240px] flex flex-col font-sans overflow-hidden transition-shadow ${data.isParsed ? 'hover:ring-2 hover:ring-blue-500/50 cursor-pointer' : ''}`} title={data.isParsed ? 'Double-click to drill-down' : undefined}>
        <div className={`${hasUnconnected ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20'} border-b p-3 flex flex-col items-center justify-center relative`}>
          <div className={`flex items-center gap-2 ${hasUnconnected ? 'text-red-400' : 'text-orange-400'}`}>
             <Cpu className="w-4 h-4" />
@@ -318,9 +331,31 @@ const edgeTypes = {
   wireEdge: WireEdge,
 };
 
-function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }: { content: string, selectedNet?: string, onSelectNet?: (net: string | null) => void }) {
+function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet, allFilesData, onNavigateToFile, initialModuleName, onSelectModule, hasDiagramHistory, onDiagramBack, onNavigateToCode }: VerilogDiagramViewerProps) {
   const parsedModules = useMemo(() => parseVerilog(content), [content]);
   const [selectedModuleIdx, setSelectedModuleIdx] = useState(0);
+
+  // Sync initialModuleName into the list
+  useEffect(() => {
+    if (initialModuleName && parsedModules) {
+        const idx = parsedModules.findIndex(m => m.name === initialModuleName);
+        if (idx !== -1) setSelectedModuleIdx(idx);
+    }
+  }, [initialModuleName, parsedModules]);
+
+  const globalParsedMap = useMemo(() => {
+     if (!allFilesData) return null;
+     const map = new Map<string, { fileId: string, idx: number, module: any }>();
+     Object.entries(allFilesData).forEach(([fileId, f]) => {
+         if (['v', 'sv', 'verilog'].includes(f.type?.toLowerCase() || '') || (f.name && (f.name.endsWith('.v') || f.name.endsWith('.sv')))) {
+             try {
+                 const p = parseVerilog(f.content);
+                 p.forEach((mod, idx) => map.set(mod.name, { fileId, idx, module: mod }));
+             } catch (e) {}
+         }
+     });
+     return map;
+  }, [allFilesData]);
   
   const [localSelectedNet, setLocalSelectedNet] = useState<string | null>(null);
   const selectedNet = externalSelectedNet !== undefined ? externalSelectedNet : localSelectedNet;
@@ -389,8 +424,11 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
          return a.localeCompare(b);
      };
 
-     const preparedInstances = topModule.instances.map(inst => {
-         const instModuleDef = parsedModules.find(m => m.name === inst.type);
+      const preparedInstances = topModule.instances.map(inst => {
+         let instModuleDef = parsedModules.find(m => m.name === inst.type);
+         if (!instModuleDef && globalParsedMap) {
+             instModuleDef = globalParsedMap.get(inst.type)?.module;
+         }
          const annotatedConnections = inst.connections.map(conn => {
             let direction = 'target'; 
             if (instModuleDef) {
@@ -458,7 +496,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
      inputs.forEach(i => newNodes.push({ id: `in_${i.name}`, type: 'inputPort', position: {x:0, y:0}, data: { ...i } }));
      outputs.forEach(o => newNodes.push({ id: `out_${o.name}`, type: 'outputPort', position: {x:0, y:0}, data: { ...o } }));
      inouts.forEach(io => newNodes.push({ id: `inout_${io.name}`, type: 'inoutPort', position: {x:0, y:0}, data: { ...io } }));
-     preparedInstances.forEach(i => newNodes.push({ id: `inst_${i.name}`, type: 'instance', position: {x:0, y:0}, data: { ...i } }));
+     preparedInstances.forEach(i => newNodes.push({ id: `inst_${i.name}`, type: 'instance', position: {x:0, y:0}, data: { ...i, isParsed: parsedModules.some(m => m.name === i.type) || (globalParsedMap && globalParsedMap.has(i.type)) } }));
 
      if (logicInHandles.size > 0 || logicOutHandles.size > 0) {
          newNodes.push({ 
@@ -483,8 +521,23 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
          setTimeout(() => fitView({ padding: 0.1, duration: 200 }), 100);
      }
      
-     setNodes(layN); setEdges(layE);
-  }, [parsedModules, selectedModuleIdx, setNodes, setEdges, resetToggle]);
+     setNodes(layN.map(n => {
+         if (n.id === 'inputs_group' || n.id === 'outputs_group') return { ...n, zIndex: -1 };
+         return { ...n, zIndex: edgesOnTop ? 0 : 10 };
+     }));
+     setEdges(layE.map(e => ({
+         ...e,
+         selected: !!(selectedNet && e.data?.netName === selectedNet),
+         zIndex: (selectedNet && e.data?.netName === selectedNet) ? 100 : (edgesOnTop ? 10 : 0),
+         data: { 
+             ...e.data, 
+             isHovered: selectedNet && e.data?.netName === selectedNet, 
+             hasHoveredNet: !!selectedNet,
+             routingMode
+         },
+         animated: selectedNet && e.data?.netName === selectedNet,
+     })));
+  }, [parsedModules, selectedModuleIdx, setNodes, setEdges, resetToggle, edgesOnTop, selectedNet, routingMode]);
   
   useEffect(() => {
      setEdges((eds) => eds.map(e => ({
@@ -504,7 +557,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
          if (n.id === 'inputs_group' || n.id === 'outputs_group') return { ...n, zIndex: -1 };
          return { ...n, zIndex: edgesOnTop ? 0 : 10 };
      }));
-  }, [selectedNet, setEdges, setNodes, routingMode, edgesOnTop]);
+  }, [selectedNet, setEdges, setNodes, routingMode, edgesOnTop, parsedModules, selectedModuleIdx]);
 
   const onEdgeClick = useCallback((_: any, edge: Edge) => { if (edge.data?.netName) handleSelectNet(edge.data.netName as string); }, [handleSelectNet]);
   const onPaneClick = useCallback(() => handleSelectNet(null), [handleSelectNet]);
@@ -527,10 +580,43 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
       cached.viewport = viewport;
   }, [parsedModules, selectedModuleIdx]);
 
+  const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
+      if (node.type === 'instance') {
+          const instType = node.data.type as string;
+          const idx = parsedModules.findIndex(m => m.name === instType);
+          const currentModName = parsedModules[selectedModuleIdx]?.name;
+          if (idx !== -1) {
+              const targetFileId = globalParsedMap?.get(currentModName)?.fileId;
+              if (onNavigateToFile && targetFileId) {
+                  onNavigateToFile(targetFileId, instType, currentModName);
+              }
+              setSelectedModuleIdx(idx);
+              setLocalSelectedNet(null);
+              if (onSelectNet) onSelectNet(null);
+          } else if (globalParsedMap && globalParsedMap.has(instType)) {
+              const target = globalParsedMap.get(instType)!;
+              if (onNavigateToFile) onNavigateToFile(target.fileId, instType, currentModName);
+          }
+      } else if (node.type === 'internalLogic') {
+          if (onNavigateToCode) {
+              onNavigateToCode(parsedModules[selectedModuleIdx]?.name);
+          }
+      }
+  }, [parsedModules, onSelectNet, globalParsedMap, onNavigateToFile, selectedModuleIdx, onNavigateToCode]);
+
   return (
     <div className="w-full h-full bg-[#0a0a0c] relative flex flex-col font-sans">
       <div className="absolute top-4 left-4 z-50 flex flex-col gap-2">
          <div className="flex items-center gap-2">
+           {hasDiagramHistory && onDiagramBack && (
+               <button 
+                   onClick={onDiagramBack}
+                   className="px-3 py-2 bg-[#121216]/90 backdrop-blur border border-white/10 rounded-lg shadow-xl text-xs flex items-center gap-2 text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
+               >
+                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                   Back
+               </button>
+           )}
            <div className="px-4 py-2 bg-[#121216]/90 backdrop-blur border border-white/10 rounded-lg shadow-xl text-xs flex items-center gap-3">
                <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> <span className="font-semibold text-white">Block Diagram</span></div>
                <div className="w-px h-4 bg-white/10" />
@@ -545,7 +631,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
                           <DropdownMenu.Content align="start" className="z-50 min-w-[150px] bg-[#1e1e24] border border-[#27272a] rounded-lg shadow-xl py-1 mt-2 font-sans font-medium text-xs">
                              {parsedModules.map((m, i) => (
                                  <DropdownMenu.Item asChild key={m.name}>
-                                     <button className="w-full text-left px-4 py-2 hover:bg-[#27272a] text-slate-300 focus:outline-none focus:bg-[#27272a]" onClick={() => setSelectedModuleIdx(i)}>
+                                     <button className="w-full text-left px-4 py-2 hover:bg-[#27272a] text-slate-300 focus:outline-none focus:bg-[#27272a]" onClick={() => { setSelectedModuleIdx(i); if (onSelectModule) onSelectModule(m.name); }}>
                                         {m.name}
                                      </button>
                                  </DropdownMenu.Item>
@@ -598,6 +684,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
          <div className="h-px w-full bg-white/5 my-0.5" />
          <div className="flex items-center gap-2 text-red-400"><AlertTriangle className="w-3 h-3" /> Unconnected Port</div>
          <div className="flex items-center gap-2 text-yellow-500 mt-1.5 font-semibold opacity-80">Click wires to trace</div>
+         <div className="flex items-center gap-2 text-blue-400 mt-0.5 font-semibold opacity-80">Double-click instances to drill-down</div>
       </div>
 
       <ReactFlow
@@ -605,6 +692,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
         onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop} onMoveEnd={onMoveEnd}
         onEdgeClick={onEdgeClick} onPaneClick={onPaneClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         elevateNodesOnSelect={false} elevateEdgesOnSelect={false}
         fitView fitViewOptions={{ padding: 0.1 }} minZoom={0.1} maxZoom={2} attributionPosition="bottom-right"
       >
@@ -615,6 +703,6 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet }
   );
 }
 
-export function VerilogDiagramViewer(props: { content: string, selectedNet?: string, onSelectNet?: (net: string | null) => void }) {
+export function VerilogDiagramViewer(props: VerilogDiagramViewerProps) {
    return <ReactFlowProvider><InnerDiagram {...props}/></ReactFlowProvider>;
 }
