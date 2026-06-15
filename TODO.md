@@ -28,6 +28,7 @@
    - **Git Status Polling**: Reduced the background Git polling frequency from every 3 seconds to every 15 seconds.
    - **Background Tab Suspension**: Implemented `document.hidden` detection inside the polling logic; the application now entirely suspends background Git checking when the browser tab is invisible, and instantly triggers a fresh fetch upon `window.addEventListener('focus')`.
    - **Waveform Viewer Effect Loop fix**: Removed a recursive dependency loop inside `WaveformViewer`'s view state persistence hook that was causing continuous internal state re-evaluation even when the canvas was untouched.
+   - **Monaco Editor Scroll Lag & CPU Fix**: Fixed a critical frontend performance bottleneck where scrolling the code editor spiked the CPU to 80% and caused the UI to hang. The issue was an unhandled `ResizeObserver` infinite layout loop caused by Monaco's `w-full h-full` dynamically resizing inside a flexible constraint (`flex-1`). Changed the editor's bounding container to `absolute inset-0`, stripping it from normal relative flow calculation and instantly eliminating layout reflow spam during scrolls and rest states.
 
 ## Tasks for Tomorrow
 1. (Ready for new assignments and features)

@@ -1188,9 +1188,10 @@ int main(int argc, char** argv) {
                      />
                   </div>
                 )}
-                <div className={`w-full h-full ${(isVCDMode || isMarkdownMode || isSVMode) ? 'hidden' : 'block'}`}>
+                <div className={`absolute inset-0 ${(isVCDMode || isMarkdownMode || isSVMode) ? 'hidden' : 'block'}`}>
                   <Editor
                     height="100%"
+                    width="100%"
                     theme={editorTheme}
                     onMount={handleEditorDidMount}
                     path={activeFile}
