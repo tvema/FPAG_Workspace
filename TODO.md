@@ -24,6 +24,10 @@
    - **Saved Elements**: Serialized all dynamically tracked frontend views including `openedTabs`, `activeFile`, explorer visual folders (`collapsedDirs`), view toggle combinations (`fileUIStates`), AI Assistant visibility (`isChatOpen`), diagram history buffers, and custom width overrides (`chatWidth`).
    - **Structural Safety**: Enhanced the project load sequence (for both existing server-fetched data AND seeded default files) to carefully hydrate this cache only for validated file IDs, guaranteeing dead references to deleted files instantly prune themselves rather than crashing the interface.
    - **Global Layout Persistance**: Added `autoSaveId` tags into root directional `PanelGroup` containers, linking terminal outputs, split window panes, and primary layouts natively to persistent `localStorage` indices so users restore to their exact structural split orientations.
+2. **Idle CPU & Network Optimizations**: Addressed issues where the application consumed heavy resources and bandwidth even when idle in the background.
+   - **Git Status Polling**: Reduced the background Git polling frequency from every 3 seconds to every 15 seconds.
+   - **Background Tab Suspension**: Implemented `document.hidden` detection inside the polling logic; the application now entirely suspends background Git checking when the browser tab is invisible, and instantly triggers a fresh fetch upon `window.addEventListener('focus')`.
+   - **Waveform Viewer Effect Loop fix**: Removed a recursive dependency loop inside `WaveformViewer`'s view state persistence hook that was causing continuous internal state re-evaluation even when the canvas was untouched.
 
 ## Tasks for Tomorrow
 1. (Ready for new assignments and features)
