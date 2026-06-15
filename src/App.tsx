@@ -58,7 +58,7 @@ export default function App() {
   const [activeProject, setActiveProject] = useState<string | null>(null);
 
   const fetchGitStatus = useCallback(async () => {
-     if (!activeProject) return;
+     if (!activeProject || document.hidden) return;
      try {
        const res = await fetch(`/api/git/status?projectId=${activeProject}`);
        if (res.ok) {
@@ -73,8 +73,13 @@ export default function App() {
      }
   }, [activeProject]);
 
-  useInterval(fetchGitStatus, 3000);
-  useEffect(() => { fetchGitStatus(); }, [fetchGitStatus]);
+  useInterval(fetchGitStatus, 15000);
+  useEffect(() => { 
+    fetchGitStatus(); 
+    const onFocus = () => fetchGitStatus();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [fetchGitStatus]);
   
   const updateFileUI = (fileId: string, updater: (prev: any) => any) => {
      setFileUIStates(prev => ({ ...prev, [fileId]: updater(prev[fileId] || {}) }));
@@ -496,13 +501,37 @@ export default function App() {
           }
 
           setFilesData(parsed);
-          const firstKey = Object.keys(parsed)[0];
-          if (firstKey) {
-            setActiveFile(firstKey);
-            setOpenedTabs([firstKey]);
-          } else {
-            setActiveFile('');
-            setOpenedTabs([]);
+          
+          let stateRestored = false;
+          try {
+             const cached = localStorage.getItem(`workspace_config_${activeProject}`);
+             if (cached) {
+                const config = JSON.parse(cached);
+                const validTabs = (config.openedTabs || []).filter((id: string) => parsed[id]);
+                if (validTabs.length > 0) {
+                   setOpenedTabs(validTabs);
+                   setActiveFile(parsed[config.activeFile] ? config.activeFile : validTabs[0]);
+                   if (config.collapsedDirs) setCollapsedDirs(config.collapsedDirs);
+                   if (config.fileUIStates) setFileUIStates(config.fileUIStates);
+                   if (config.isChatOpen !== undefined) setIsChatOpen(config.isChatOpen);
+                   if (config.diagramHistory) setDiagramHistory(config.diagramHistory);
+                   if (config.chatWidth) setChatWidth(config.chatWidth);
+                   stateRestored = true;
+                }
+             }
+          } catch(e) {
+             console.error("Failed to parse cached workspace config", e);
+          }
+          
+          if (!stateRestored) {
+             const firstKey = Object.keys(parsed)[0];
+             if (firstKey) {
+               setActiveFile(firstKey);
+               setOpenedTabs([firstKey]);
+             } else {
+               setActiveFile('');
+               setOpenedTabs([]);
+             }
           }
         } else {
           // If default project is empty, seed it
@@ -517,9 +546,33 @@ export default function App() {
                }).catch(e => console.error("Could not seed data", e));
              });
              setFilesData(seeded);
-             const first = Object.keys(seeded)[0];
-             setActiveFile(first || '');
-             setOpenedTabs(first ? [first] : []);
+             
+             let stateRestored = false;
+             try {
+                const cached = localStorage.getItem(`workspace_config_${activeProject}`);
+                if (cached) {
+                   const config = JSON.parse(cached);
+                   const validTabs = (config.openedTabs || []).filter((id: string) => seeded[id]);
+                   if (validTabs.length > 0) {
+                      setOpenedTabs(validTabs);
+                      setActiveFile(seeded[config.activeFile] ? config.activeFile : validTabs[0]);
+                      if (config.collapsedDirs) setCollapsedDirs(config.collapsedDirs);
+                      if (config.fileUIStates) setFileUIStates(config.fileUIStates);
+                      if (config.isChatOpen !== undefined) setIsChatOpen(config.isChatOpen);
+                      if (config.diagramHistory) setDiagramHistory(config.diagramHistory);
+                      if (config.chatWidth) setChatWidth(config.chatWidth);
+                      stateRestored = true;
+                   }
+                }
+             } catch(e) {
+                console.error("Failed to parse cached workspace config on seed", e);
+             }
+             
+             if (!stateRestored) {
+                const first = Object.keys(seeded)[0];
+                setActiveFile(first || '');
+                setOpenedTabs(first ? [first] : []);
+             }
           } else {
              setFilesData({});
              setActiveFile('');
@@ -529,6 +582,20 @@ export default function App() {
       })
       .catch(err => console.error('Failed to load files from server', err));
   }, [activeProject]);
+
+  useEffect(() => {
+    if (!activeProject || !openedTabs.length) return;
+    const stateObj = {
+        openedTabs,
+        activeFile,
+        collapsedDirs,
+        fileUIStates,
+        isChatOpen,
+        diagramHistory,
+        chatWidth,
+    };
+    localStorage.setItem(`workspace_config_${activeProject}`, JSON.stringify(stateObj));
+  }, [activeProject, openedTabs, activeFile, collapsedDirs, fileUIStates, isChatOpen, diagramHistory, chatWidth]);
 
   const fileList = useMemo(() => Object.entries(filesData).map(([id, f]) => ({id, ...f})), [filesData]);
   
@@ -990,7 +1057,7 @@ int main(int argc, char** argv) {
 
       {/* Main Content */}
       <div className="flex-1 w-full overflow-hidden">
-        <PanelGroup orientation="horizontal" id="workspace-horizontal-v5">
+        <PanelGroup orientation="horizontal" id="workspace-horizontal-v5" autoSaveId="workspace-horizontal-layouts">
           {/* Left Panel */}
           {isChatOpen && isVCDMode && (
              <>
@@ -1049,7 +1116,7 @@ int main(int argc, char** argv) {
 
           {/* Editor Area (Middle) */}
           <Panel id="editor" defaultSize={55} minSize={30} className="flex flex-col min-w-0 bg-[#1e1e1e]">
-            <PanelGroup orientation="vertical" id="workspace-vertical-v5">
+            <PanelGroup orientation="vertical" id="workspace-vertical-v5" autoSaveId="workspace-vertical-layouts">
               <Panel id="editor-main" defaultSize={70} className="flex flex-col relative min-h-0">
                 <TabsBar
                   openedTabs={openedTabs}

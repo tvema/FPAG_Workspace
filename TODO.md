@@ -19,5 +19,11 @@
 16. **Diagram Fixes**: Fixed a bug where jumping to module source code failed due to rigid substring parsing; replaced it with a dynamic Regex pattern handler inside Monaco Editor search. Implemented correct array dependency popping on the "Back" button which fixes the bug where retreating backwards from deep submodules within the same file did not resolve correctly. Fixed `zIndex` application phase to fix the visual glitch where wires would draw above nodes on submodule navigation unless toggled twice.
 17. **Editor View State Persistence Fix**: Fixed an issue where switching back to the code text view from the schematic viewer would reset the scroll and cursor positions to the top of the file. Corrected the approach by preserving the React Monaco Editor component in the DOM (using CSS `display: none` via Tailwind's `hidden` class) instead of unmounting it during mode switches. This allows Monaco's native internal view state mechanisms to perfectly retain cursor and scroll position across structural toggles.
 
+## Completed Tasks (June 15, 2026)
+1. **Automated Workspace Persistence**: Implemented strict local caching of workspace state via `workspace_config_${activeProject}` in `localStorage`. 
+   - **Saved Elements**: Serialized all dynamically tracked frontend views including `openedTabs`, `activeFile`, explorer visual folders (`collapsedDirs`), view toggle combinations (`fileUIStates`), AI Assistant visibility (`isChatOpen`), diagram history buffers, and custom width overrides (`chatWidth`).
+   - **Structural Safety**: Enhanced the project load sequence (for both existing server-fetched data AND seeded default files) to carefully hydrate this cache only for validated file IDs, guaranteeing dead references to deleted files instantly prune themselves rather than crashing the interface.
+   - **Global Layout Persistance**: Added `autoSaveId` tags into root directional `PanelGroup` containers, linking terminal outputs, split window panes, and primary layouts natively to persistent `localStorage` indices so users restore to their exact structural split orientations.
+
 ## Tasks for Tomorrow
 1. (Ready for new assignments and features)

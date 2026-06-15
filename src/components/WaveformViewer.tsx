@@ -92,7 +92,7 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange, filesData }:
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [scale, offsetX, offsetY, tracks, selectedModule, viewState]);
+  }, [scale, offsetX, offsetY, tracks, selectedModule]);
   
   // Sync external track changes down
   useEffect(() => {
