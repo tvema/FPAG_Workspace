@@ -1057,11 +1057,11 @@ int main(int argc, char** argv) {
 
       {/* Main Content */}
       <div className="flex-1 w-full overflow-hidden">
-        <PanelGroup orientation="horizontal" id="workspace-horizontal-v5" autoSaveId="workspace-horizontal-layouts">
+        <PanelGroup orientation="horizontal" id="workspace-horizontal-v5">
           {/* Left Panel */}
           {isChatOpen && isVCDMode && (
              <>
-               <Panel key={`vcd-panel-${activeFile}`} id={`vcd-panel-${activeFile}`} defaultSize={fileUIStates[activeFile]?.explorerWidth || 25} minSize={5} onResize={(size) => { draggingSizeRef.current = size; }} className="flex flex-col z-20 bg-[#16161a]">
+               <Panel key={`vcd-panel-${activeFile}`} id={`vcd-panel-${activeFile}`} defaultSize={fileUIStates[activeFile]?.explorerWidth || 25} minSize={5} onResize={(size: any) => { draggingSizeRef.current = typeof size === 'number' ? size : size.asPercentage; }} className="flex flex-col z-20 bg-[#16161a]">
                   <VCDScopeTree 
                       vcdContent={filesData[activeFile].content}
                       viewState={fileUIStates[activeFile]?.vcd}
@@ -1091,7 +1091,7 @@ int main(int argc, char** argv) {
 
           {isChatOpen && !isVCDMode && !isSVMode && (
              <>
-               <Panel key="chat-panel" id="chat" defaultSize={chatWidth || 25} minSize={5} onResize={(size) => { draggingSizeRef.current = size; }} className="flex flex-col z-20 bg-[#16161a]">
+               <Panel key="chat-panel" id="chat" defaultSize={chatWidth || 25} minSize={5} onResize={(size: any) => { draggingSizeRef.current = typeof size === 'number' ? size : size.asPercentage; }} className="flex flex-col z-20 bg-[#16161a]">
                   <OllamaChat 
                      onAddFile={handleAddFile} 
                      activeFileId={activeFile} 
@@ -1116,7 +1116,7 @@ int main(int argc, char** argv) {
 
           {/* Editor Area (Middle) */}
           <Panel id="editor" defaultSize={55} minSize={30} className="flex flex-col min-w-0 bg-[#1e1e1e]">
-            <PanelGroup orientation="vertical" id="workspace-vertical-v5" autoSaveId="workspace-vertical-layouts">
+            <PanelGroup orientation="vertical" id="workspace-vertical-v5">
               <Panel id="editor-main" defaultSize={70} className="flex flex-col relative min-h-0">
                 <TabsBar
                   openedTabs={openedTabs}

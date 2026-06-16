@@ -52,27 +52,33 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
      return null;
   }, [activeFilePath, filesData]);
 
+  const [debouncedFilesData, setDebouncedFilesData] = useState(filesData);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedFilesData(filesData), 1000);
+    return () => clearTimeout(t);
+  }, [filesData]);
+
   const parsedModules = useMemo(() => {
      const res: VerilogModule[] = [];
-     if (!tbConfig || !filesData) return res;
+     if (!tbConfig || !debouncedFilesData) return res;
      
      tbConfig.filesToInclude.forEach((fPath: string) => {
-         const f = (Object.values(filesData) as any[]).find((f: any) => f.path === fPath || f.path.replace(/^\/+/, '') === fPath.replace(/^\/+/, ''));
+         const f = (Object.values(debouncedFilesData) as any[]).find((f: any) => f.path === fPath || f.path.replace(/^\/+/, '') === fPath.replace(/^\/+/, ''));
          if (f && f.content) {
              res.push(...parseVerilog(f.content));
          }
      });
      // Fallback: parse all if tbConfig is weird
      if (res.length === 0) {
-         for (const k in filesData) {
-             const f = filesData[k] as any;
+         for (const k in debouncedFilesData) {
+             const f = debouncedFilesData[k] as any;
              if (f.type === 'verilog' || f.name.endsWith('.v') || f.name.endsWith('.sv')) {
                  res.push(...parseVerilog(f.content));
              }
          }
      }
      return res;
-  }, [tbConfig, filesData]);
+  }, [tbConfig, debouncedFilesData]);
 
   // Build a tree of scopes
   const root = useMemo(() => {

@@ -138,13 +138,19 @@ const ModuleNode = ({ mod, selectedNet, onSelectNet }: { mod: VerilogModule, sel
 }
 
 export function VerilogASTViewer({ content, selectedNet, onSelectNet }: { content: string, selectedNet?: string, onSelectNet?: (net: string) => void }) {
+  const [debouncedContent, setDebouncedContent] = useState(content);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedContent(content), 800);
+    return () => clearTimeout(t);
+  }, [content]);
+
   const parsed = useMemo(() => {
      try {
-         return parseVerilog(content);
+         return parseVerilog(debouncedContent);
      } catch(e) {
          return { error: String(e) };
      }
-  }, [content]);
+  }, [debouncedContent]);
 
   return (
     <div className="flex-1 overflow-auto bg-[#121216] p-6 text-[13px] font-sans text-slate-300 leading-relaxed shadow-inner">

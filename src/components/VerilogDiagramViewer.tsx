@@ -332,7 +332,15 @@ const edgeTypes = {
 };
 
 function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet, allFilesData, onNavigateToFile, initialModuleName, onSelectModule, hasDiagramHistory, onDiagramBack, onNavigateToCode }: VerilogDiagramViewerProps) {
-  const parsedModules = useMemo(() => parseVerilog(content), [content]);
+  const [debouncedContent, setDebouncedContent] = useState(content);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedContent(content), 800);
+    return () => clearTimeout(t);
+  }, [content]);
+
+  const parsedModules = useMemo(() => {
+    try { return parseVerilog(debouncedContent); } catch (e) { return []; }
+  }, [debouncedContent]);
   const [selectedModuleIdx, setSelectedModuleIdx] = useState(0);
 
   // Sync initialModuleName into the list
@@ -343,10 +351,16 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet, 
     }
   }, [initialModuleName, parsedModules]);
 
+  const [debouncedAllFilesData, setDebouncedAllFilesData] = useState(allFilesData);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedAllFilesData(allFilesData), 1000);
+    return () => clearTimeout(t);
+  }, [allFilesData]);
+
   const globalParsedMap = useMemo(() => {
-     if (!allFilesData) return null;
+     if (!debouncedAllFilesData) return null;
      const map = new Map<string, { fileId: string, idx: number, module: any }>();
-     Object.entries(allFilesData).forEach(([fileId, f]) => {
+     Object.entries(debouncedAllFilesData).forEach(([fileId, f]) => {
          if (['v', 'sv', 'verilog'].includes(f.type?.toLowerCase() || '') || (f.name && (f.name.endsWith('.v') || f.name.endsWith('.sv')))) {
              try {
                  const p = parseVerilog(f.content);
@@ -355,7 +369,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet, 
          }
      });
      return map;
-  }, [allFilesData]);
+  }, [debouncedAllFilesData]);
   
   const [localSelectedNet, setLocalSelectedNet] = useState<string | null>(null);
   const selectedNet = externalSelectedNet !== undefined ? externalSelectedNet : localSelectedNet;

@@ -30,5 +30,13 @@
    - **Waveform Viewer Effect Loop fix**: Removed a recursive dependency loop inside `WaveformViewer`'s view state persistence hook that was causing continuous internal state re-evaluation even when the canvas was untouched.
    - **Monaco Editor Scroll Lag & CPU Fix**: Fixed a critical frontend performance bottleneck where scrolling the code editor spiked the CPU to 80% and caused the UI to hang. The issue was an unhandled `ResizeObserver` infinite layout loop caused by Monaco's `w-full h-full` dynamically resizing inside a flexible constraint (`flex-1`). Changed the editor's bounding container to `absolute inset-0`, stripping it from normal relative flow calculation and instantly eliminating layout reflow spam during scrolls and rest states.
 
+## Completed Tasks (June 16, 2026)
+1. **Git Context Persistence Fix**: Fixed a critical issue where the IDE would lose track of the Git repository state (prompting "Init Git Repo" and resetting all tracked file statuses to untracked) whenever the server was restarted or redeployed. 
+   - **Root Cause**: Node's `os.tmpdir()` was previously used to host `.git` and the exported filesystem buffer, which ephemeral environments and container lifecycles instantly wipe during a restart. 
+   - **Implementation**: Migrated `workspace_export` to respect the `WORKSPACE_DIR` environment variable (falling back to `process.cwd()/.workspace_export`), safely anchoring tracking data, git objects, and uncommitted staging states to a persistent custom location.
+2. **Deep AST Parsing Lag Fix**: Addressed a severe memory and event-loop lag issue reported as "constant frame-rate stuttering after several hours of operation".
+   - **Root Cause**: The application was instantaneously invoking `parseVerilog()` on the `content` or `allFilesData` dependency arrays on every single keystroke. When a large project was accumulated over hours, compiling the whole structure thousands of times per minute paralyzed the main UI thread.
+   - **Implementation**: Intelligently isolated the AST parsers (`VerilogDiagramViewer`, `VerilogASTViewer`, `VCDScopeTree`, `WaveformViewer`) behind `setTimeout` debouncers. Now, visual dependency maps and abstract syntax trees evaluate off-cadence (800ms - 1000ms delay), freeing typing operations entirely and eliminating memory bloating over long sessions.
+
 ## Tasks for Tomorrow
 1. (Ready for new assignments and features)

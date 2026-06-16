@@ -10,4 +10,5 @@ coverage/
 *.db-shm
 *.db-wal
 projects_export/
+.workspace_export/
 

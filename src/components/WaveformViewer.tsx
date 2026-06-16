@@ -142,17 +142,23 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange, filesData }:
     }
   }, [vcd]);
 
+  const [debouncedFilesData, setDebouncedFilesData] = useState(filesData);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedFilesData(filesData), 1000);
+    return () => clearTimeout(t);
+  }, [filesData]);
+
   const parsedVerilogModules = useMemo(() => {
      const res: VerilogModule[] = [];
-     if (!filesData) return res;
-     for (const k in filesData) {
-         const f = filesData[k];
+     if (!debouncedFilesData) return res;
+     for (const k in debouncedFilesData) {
+         const f = debouncedFilesData[k];
          if (['v','sv','verilog'].includes(f.type?.toLowerCase() || '') || f.name.endsWith('.v')) {
              res.push(...parseVerilog(f.content));
          }
      }
      return res;
-  }, [filesData]);
+  }, [debouncedFilesData]);
 
   const ioSignalsSet = useMemo(() => {
      if (filterMode !== 'io_only') return new Set<string>();
