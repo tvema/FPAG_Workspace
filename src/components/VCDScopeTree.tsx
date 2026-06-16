@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { VCDData, parseVCD } from '../utils/vcdParser';
 import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Hash, Type, Save, List, Check, X, ArrowRightToLine, ArrowLeftFromLine, ArrowRightLeft, FastForward, Cpu, Database } from 'lucide-react';
 import { WaveformViewerViewState } from './WaveformViewer';

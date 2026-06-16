@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { parseVerilog, VerilogModule, VerilogSignal, VerilogInstance } from '../utils/verilogParser';
 import { ChevronRight, ChevronDown, Box, Cpu, FileJson, ArrowRightToLine, ArrowLeftFromLine, ArrowRightLeft, FastForward, Database } from 'lucide-react';
 
