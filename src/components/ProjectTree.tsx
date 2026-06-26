@@ -31,7 +31,7 @@ interface ProjectTreeProps {
   activeFile: string | null;
   setOpenedTabs: React.Dispatch<React.SetStateAction<string[]>>;
   gitStatus: any;
-  setLineJumpTarget: React.Dispatch<React.SetStateAction<string | null>>;
+  setLineJumpTarget: React.Dispatch<React.SetStateAction<number | string | null>>;
   setChatInputs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setIsChatOpen: React.Dispatch<React.SetStateAction<boolean>>;
   handleGitAction: (action: string, file: string) => void;
@@ -194,7 +194,12 @@ export function ProjectTree({
                     setOpenedTabs(p => p.includes(node.fileId!) ? p : [...p, node.fileId!]);
                     
                     if (isModule || node.type === 'wire' || node.type === 'reg' || node.type === 'logic' || node.type === 'input' || node.type === 'output' || node.type === 'inout') {
-                       setLineJumpTarget(node.lineStart !== undefined ? String(node.lineStart) : (node.content ? String(node.content) : null));
+                       if (node.lineStart !== undefined) {
+                           setLineJumpTarget(node.lineStart);
+                       } else {
+                           const isSignal = !isModule;
+                           setLineJumpTarget(isSignal ? `REGEX:^\\s*(?:input|output|inout|wire|reg|logic)[^;]*\\b${node.name}\\b` : `REGEX:^\\s*module\\s+${node.name}\\b`);
+                       }
                     }
                  }
               }}
@@ -229,7 +234,7 @@ export function ProjectTree({
                  ) : (
                     <Hash className="w-3.5 h-3.5 shrink-0 text-slate-500" />
                  )}
-                 <span className={`truncate ${isModule ? 'text-indigo-300' : ''} ${node.type === 'input' ? 'text-emerald-200' : node.type === 'output' ? 'text-amber-200' : node.type === 'inout' ? 'text-blue-200' : node.type === 'reg' ? 'text-rose-200' : node.type === 'wire' ? 'text-cyan-200' : node.type === 'logic' ? 'text-purple-200' : ''}`}>{node.name}</span>
+                 <span className={`truncate ${(isModule || node.type === 'input' || node.type === 'output' || node.type === 'inout' || node.type === 'reg' || node.type === 'wire' || node.type === 'logic') ? 'hover-ctrl-underline' : ''} ${isModule ? 'text-indigo-300' : ''} ${node.type === 'input' ? 'text-emerald-200' : node.type === 'output' ? 'text-amber-200' : node.type === 'inout' ? 'text-blue-200' : node.type === 'reg' ? 'text-rose-200' : node.type === 'wire' ? 'text-cyan-200' : node.type === 'logic' ? 'text-purple-200' : ''}`}>{node.name}</span>
                  {gitMarker}
                </div>
                

@@ -215,8 +215,15 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
        <div key={node.path || 'root'} className="flex flex-col">
          {node.path && (
            <div className="flex items-center group w-max">
-              <div className="flex items-center gap-1.5 py-1 px-2 hover:bg-white/5 cursor-pointer text-sm text-slate-200 select-none pr-3 rounded"
-              onClick={() => setCollapsedPaths(p => ({ ...p, [node.path]: !isCollapsed }))}
+              <div className="flex items-center gap-1.5 py-1 px-2 hover:bg-white/5 cursor-pointer text-sm text-slate-200 select-none pr-3 rounded group/node"
+              onClick={(e) => {
+                  if ((e.ctrlKey || e.metaKey) && node.verilogModule) {
+                      window.dispatchEvent(new CustomEvent('verilog-goto-module', { detail: { moduleName: node.verilogModule.name } }));
+                  } else {
+                      setCollapsedPaths(p => ({ ...p, [node.path]: !isCollapsed }));
+                  }
+              }}
+              title={node.verilogModule ? "Ctrl/Cmd+Click to view source code" : ""}
            >
              {hasChildren ? (
                 isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />
@@ -226,7 +233,7 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
              ) : (
                  <Box className="w-3.5 h-3.5 text-cyan-500 opacity-80" />
              )}
-             <span className="font-medium group-hover:text-white transition-colors">{node.name}</span>
+             <span className={`font-medium group-hover/node:text-white transition-colors ${node.verilogModule ? 'hover-ctrl-underline decoration-indigo-500/50' : ''}`}>{node.name}</span>
              {node.verilogModule && <span className="text-[11px] text-slate-500 ml-1">({node.verilogModule.name})</span>}
             </div>
             {branchSignals.length > 0 && (
@@ -309,12 +316,19 @@ export function VCDScopeTree({ vcdContent, viewState, updateViewState, activeFil
                                     <div 
                                       key={sig.name}
                                       className="flex items-center justify-between py-1 px-2 hover:bg-white/5 cursor-pointer text-[13px] group select-none w-fit rounded"
-                                      onClick={(e) => { e.stopPropagation(); toggleTrack(sig.id, sig.module, sig.name, sig); }}
+                                      onClick={(e) => { 
+                                          e.stopPropagation(); 
+                                          if (e.ctrlKey || e.metaKey) {
+                                              window.dispatchEvent(new CustomEvent('verilog-goto-signal', { detail: { signalName: sig.name } }));
+                                          } else {
+                                              toggleTrack(sig.id, sig.module, sig.name, sig);
+                                          }
+                                      }}
                                     >
-                                      <div className="flex items-center gap-1.5 overflow-hidden text-slate-300 group-hover:text-white transition-colors">
+                                      <div className="flex items-center gap-1.5 overflow-hidden text-slate-300 group-hover:text-white hover-ctrl-underline decoration-emerald-500/50 transition-colors" title="Ctrl/Cmd+Click to view source code">
                                          {iconEl}
                                          <span className="truncate">{sig.name}</span>
-                                         {sig.width > 1 && <span className="text-[10px] uppercase border px-1 rounded block text-slate-500 border-slate-700/50 bg-slate-800/30">[{sig.width}]</span>}
+                                         {sig.width > 1 && <span className="text-[10px] uppercase border px-1 rounded block text-slate-500 border-slate-700/50 bg-slate-800/30 no-underline">[{sig.width}]</span>}
                                       </div>
                                       <div className={`transition-opacity pl-4 pr-2 ${isVisible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                                          {isVisible ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500 opacity-50" />}

@@ -27,6 +27,8 @@ interface HeaderProps {
   setEditorTheme: (t: string) => void;
   showMinimap: boolean;
   setShowMinimap: React.Dispatch<React.SetStateAction<boolean>>;
+  highlightCursorWord: boolean;
+  setHighlightCursorWord: React.Dispatch<React.SetStateAction<boolean>>;
   handleEditTemplate: (type: 'v' | 'cpp') => void;
 }
 
@@ -55,6 +57,8 @@ export function Header({
   setEditorTheme,
   showMinimap,
   setShowMinimap,
+  highlightCursorWord,
+  setHighlightCursorWord,
   handleEditTemplate
 }: HeaderProps) {
   return (
@@ -208,8 +212,8 @@ export function Header({
           <DropdownMenu.Portal>
             <DropdownMenu.Content align="end" sideOffset={8} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[140px] z-50">
               <DropdownMenu.Label className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Editor Theme</DropdownMenu.Label>
-              <DropdownMenu.Item onClick={() => setEditorTheme('vs-dark')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'vs-dark' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
-                vs-dark
+              <DropdownMenu.Item onClick={() => setEditorTheme('zstate-dark')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'zstate-dark' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+                zstate-dark
               </DropdownMenu.Item>
               <DropdownMenu.Item onClick={() => setEditorTheme('light')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'light' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
                 light
@@ -221,6 +225,10 @@ export function Header({
               <DropdownMenu.Item onClick={() => setShowMinimap(p => !p)} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center justify-between text-slate-300 hover:bg-white/5 hover:text-white">
                 <span>Show Minimap</span>
                 {showMinimap && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onClick={() => setHighlightCursorWord(p => !p)} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center justify-between text-slate-300 hover:bg-white/5 hover:text-white">
+                <span>Auto-Highlight Cursor Word</span>
+                {highlightCursorWord && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
               </DropdownMenu.Item>
               <DropdownMenu.Separator className="h-px bg-white/10 my-1" />
               <DropdownMenu.Label className="px-3 py-2 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase">Makefile Templates</DropdownMenu.Label>

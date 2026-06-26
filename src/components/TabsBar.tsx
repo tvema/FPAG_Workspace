@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileCode2, X, MoreVertical, GitPullRequest } from 'lucide-react';
+import { FileCode2, X, MoreVertical, GitPullRequest, ArrowLeft } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
 interface TabsBarProps {
@@ -17,6 +17,8 @@ interface TabsBarProps {
   setActiveFile: (id: string) => void;
   closeTab: (e: React.MouseEvent, id: string) => void;
   fetchGitDiffForActiveFile: () => void;
+  onBack?: () => void;
+  canGoBack?: boolean;
 }
 
 export function TabsBar({
@@ -33,10 +35,24 @@ export function TabsBar({
   handleDrop,
   setActiveFile,
   closeTab,
-  fetchGitDiffForActiveFile
+  fetchGitDiffForActiveFile,
+  onBack,
+  canGoBack
 }: TabsBarProps) {
   return (
     <div className="flex bg-[#121214] border-b border-black/50 shrink-0 justify-between items-center min-w-0">
+      <div className="flex items-center">
+        {onBack && (
+          <button 
+            onClick={onBack} 
+            disabled={!canGoBack}
+            className={`px-3 py-2 border-r border-white/5 flex items-center justify-center transition-colors ${canGoBack ? 'text-slate-400 hover:text-white hover:bg-[#1e1e1e] cursor-pointer' : 'text-slate-700 cursor-not-allowed'}`}
+            title="Go Back"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+        )}
+      </div>
       <div className="flex overflow-x-auto no-scrollbar flex-1 items-center" ref={tabsContainerRef}>
         {openedTabs.map(id => (
           <div 

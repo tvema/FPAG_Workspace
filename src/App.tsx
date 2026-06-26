@@ -91,8 +91,9 @@ export default function App() {
 
   const [projects, setProjects] = useState<{id: string, name: string}[]>([]);
 
-  const [editorTheme, setEditorTheme] = useState<string>('vs-dark');
+  const [editorTheme, setEditorTheme] = useState<string>('zstate-dark');
   const [showMinimap, setShowMinimap] = useState<boolean>(false);
+  const [highlightCursorWord, setHighlightCursorWord] = useState<boolean>(false);
   const [lineJumpTarget, setLineJumpTarget] = useState<number | string | null>(null);
   const editorRef = React.useRef<any>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -117,6 +118,160 @@ export default function App() {
   const [gitMessageContent, setGitMessageContent] = useState<any>(null);
 
   const [gitDiffModalState, setGitDiffModalState] = useState<{isOpen: boolean, content: string}>({isOpen: false, content: ''});
+
+  const filesDataRef = useRef(filesData);
+  const openedTabsRef = useRef(openedTabs);
+  useEffect(() => {
+     const downHandler = (e: KeyboardEvent) => {
+         if (e.key === 'Control' || e.key === 'Meta') {
+             document.body.classList.add('ctrl-pressed');
+         }
+     };
+     const upHandler = (e: KeyboardEvent) => {
+         if (e.key === 'Control' || e.key === 'Meta') {
+             document.body.classList.remove('ctrl-pressed');
+         }
+     };
+     window.addEventListener('keydown', downHandler);
+     window.addEventListener('keyup', upHandler);
+     // also handle window blur so it doesn't get stuck
+     const blurHandler = () => document.body.classList.remove('ctrl-pressed');
+     window.addEventListener('blur', blurHandler);
+     return () => {
+         window.removeEventListener('keydown', downHandler);
+         window.removeEventListener('keyup', upHandler);
+         window.removeEventListener('blur', blurHandler);
+     };
+  }, []);
+
+  useEffect(() => {
+     filesDataRef.current = filesData;
+     openedTabsRef.current = openedTabs;
+  }, [filesData, openedTabs]);
+
+  const [navHistory, setNavHistory] = useState<{fileId: string, isDiagramMode?: boolean, isASTMode?: boolean, lineJumpTarget?: string}[]>([]);
+  const activeFileRef = useRef(activeFile);
+  const fileUIStatesRef = useRef(fileUIStates);
+  
+  useEffect(() => {
+     activeFileRef.current = activeFile;
+     fileUIStatesRef.current = fileUIStates;
+  }, [activeFile, fileUIStates]);
+
+  useEffect(() => {
+     const handler = ((e: CustomEvent) => {
+         const word = e.detail.moduleName || e.detail.signalName;
+         const isSignal = !!e.detail.signalName;
+         const fd = filesDataRef.current;
+         let matchFound = false;
+
+         const currentFileId = activeFileRef.current;
+         if (currentFileId) {
+             setNavHistory(prev => [...prev, {
+                 fileId: currentFileId,
+                 isDiagramMode: fileUIStatesRef.current[currentFileId]?.isDiagramMode,
+                 isASTMode: fileUIStatesRef.current[currentFileId]?.isASTMode
+             }]);
+         }
+
+         // For signals, first try to find in current active file
+         if (isSignal && currentFileId) {
+             const f = fd[currentFileId];
+             if (f && (['v', 'sv', 'verilog'].includes(f.type?.toLowerCase() || '') || f.name?.endsWith('.v') || f.name?.endsWith('.sv'))) {
+                 const matchRegex = new RegExp(`^\\s*(?:input|output|inout|wire|reg|logic)[^;]*\\b${word}\\b`, 'm');
+                 if (matchRegex.test(f.content)) {
+                     setFileUIStates(prev => ({
+                         ...prev,
+                         [currentFileId]: { ...prev[currentFileId], isDiagramMode: false, isASTMode: false }
+                     }));
+                     setLineJumpTarget(`REGEX:^\\s*(?:input|output|inout|wire|reg|logic)[^;]*\\b${word}\\b`);
+                     matchFound = true;
+                     return;
+                 }
+             }
+         }
+
+         if (!matchFound) {
+             for (const [id, f] of Object.entries(fd)) {
+                 if (['v', 'sv', 'verilog'].includes(f.type?.toLowerCase() || '') || f.name?.endsWith('.v') || f.name?.endsWith('.sv')) {
+                     const matchRegex = isSignal 
+                         ? new RegExp(`^\\s*(?:input|output|inout|wire|reg|logic)[^;]*\\b${word}\\b`, 'm')
+                         : new RegExp(`^\\s*module\\s+${word}\\b`, 'm');
+                     if (matchRegex.test(f.content)) {
+                         if (!openedTabsRef.current.includes(id)) {
+                             setOpenedTabs(prev => [...prev, id]);
+                         }
+                         setFileUIStates(prev => ({
+                             ...prev,
+                             [id]: { ...prev[id], isDiagramMode: false, isASTMode: false }
+                         }));
+                         setActiveFile(id);
+                         setLineJumpTarget(isSignal ? `REGEX:^\\s*(?:input|output|inout|wire|reg|logic)[^;]*\\b${word}\\b` : `REGEX:^\\s*module\\s+${word}\\b`);
+                         return;
+                     }
+                 }
+             }
+         }
+     }) as EventListener;
+     window.addEventListener('verilog-goto-module', handler);
+     window.addEventListener('verilog-goto-signal', handler);
+     
+     const anyHandler = ((e: CustomEvent) => {
+         const word = e.detail.word;
+         const fd = filesDataRef.current;
+         const currentFileId = activeFileRef.current;
+
+         if (currentFileId) {
+             setNavHistory(prev => [...prev, {
+                 fileId: currentFileId,
+                 isDiagramMode: fileUIStatesRef.current[currentFileId]?.isDiagramMode,
+                 isASTMode: fileUIStatesRef.current[currentFileId]?.isASTMode
+             }]);
+         }
+
+         // Try signal in current file first
+         if (currentFileId) {
+             const f = fd[currentFileId];
+             if (f && (['v', 'sv', 'verilog'].includes(f.type?.toLowerCase() || '') || f.name?.endsWith('.v') || f.name?.endsWith('.sv'))) {
+                 const signalRegex = new RegExp(`^\\s*(?:input|output|inout|wire|reg|logic)[^;]*\\b${word}\\b`, 'm');
+                 if (signalRegex.test(f.content)) {
+                     setFileUIStates(prev => ({
+                         ...prev,
+                         [currentFileId]: { ...prev[currentFileId], isDiagramMode: false, isASTMode: false }
+                     }));
+                     setLineJumpTarget(`REGEX:^\\s*(?:input|output|inout|wire|reg|logic)[^;]*\\b${word}\\b`);
+                     return;
+                 }
+             }
+         }
+
+         // Try module in all files
+         for (const [id, f] of Object.entries(fd)) {
+             if (['v', 'sv', 'verilog'].includes(f.type?.toLowerCase() || '') || f.name?.endsWith('.v') || f.name?.endsWith('.sv')) {
+                 const moduleRegex = new RegExp(`^\\s*module\\s+${word}\\b`, 'm');
+                 if (moduleRegex.test(f.content)) {
+                     if (!openedTabsRef.current.includes(id)) {
+                         setOpenedTabs(prev => [...prev, id]);
+                     }
+                     setFileUIStates(prev => ({
+                         ...prev,
+                         [id]: { ...prev[id], isDiagramMode: false, isASTMode: false }
+                     }));
+                     setActiveFile(id);
+                     setLineJumpTarget(`REGEX:^\\s*module\\s+${word}\\b`);
+                     return;
+                 }
+             }
+         }
+     }) as EventListener;
+     window.addEventListener('verilog-goto-any', anyHandler);
+
+     return () => {
+         window.removeEventListener('verilog-goto-module', handler);
+         window.removeEventListener('verilog-goto-signal', handler);
+         window.removeEventListener('verilog-goto-any', anyHandler);
+     };
+  }, []);
 
   const isDraggingLeftPanel = useRef(false);
   const draggingSizeRef = useRef<number>(25);
@@ -144,6 +299,32 @@ export default function App() {
       console.error(e);
       alert("Error fetching diff");
     }
+  };
+
+  const goBack = () => {
+    setNavHistory(prev => {
+        if (prev.length === 0) return prev;
+        const newHistory = [...prev];
+        const last = newHistory.pop();
+        if (last) {
+            if (!openedTabsRef.current.includes(last.fileId)) {
+                setOpenedTabs(tabs => [...tabs, last.fileId]);
+            }
+            setFileUIStates(states => ({
+                ...states,
+                [last.fileId]: {
+                    ...states[last.fileId],
+                    isDiagramMode: last.isDiagramMode || false,
+                    isASTMode: last.isASTMode || false
+                }
+            }));
+            setActiveFile(last.fileId);
+            if (last.lineJumpTarget) {
+                setLineJumpTarget(last.lineJumpTarget);
+            }
+        }
+        return newHistory;
+    });
   };
 
   useEffect(() => {
@@ -186,8 +367,22 @@ export default function App() {
     attemptJump();
   }, [activeFile, lineJumpTarget]);
 
-  const handleEditorDidMount = React.useCallback((editor: any) => {
+  const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
     editorRef.current = editor;
+
+    editor.onMouseDown((e: any) => {
+       if (e.event.ctrlKey || e.event.metaKey) {
+           if (e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT) {
+               const position = e.target.position;
+               const model = editor.getModel();
+               const wordInfo = model.getWordAtPosition(position);
+               if (wordInfo) {
+                   const word = wordInfo.word;
+                   window.dispatchEvent(new CustomEvent('verilog-goto-any', { detail: { word } }));
+               }
+           }
+       }
+    });
   }, []);
 
   const editorOptions = useMemo(() => ({
@@ -196,9 +391,30 @@ export default function App() {
     scrollBeyondLastLine: false,
     wordWrap: 'off' as const,
     smoothScrolling: false,
-  }), [showMinimap]);
+    occurrencesHighlight: highlightCursorWord ? 'singleFile' : 'off', // Highlight occurrences based on cursor position toggle
+    selectionHighlight: true, // Highlight occurrences of selected text
+  }), [showMinimap, highlightCursorWord]);
 
   const handleEditorBeforeMount = useCallback((monaco: any) => {
+    monaco.editor.defineTheme('zstate-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.selectionHighlightBackground': '#ffcc0060',
+        'editor.selectionHighlightBorder': '#ffcc00',
+        'editor.wordHighlightBackground': '#ffcc0060',
+        'editor.wordHighlightBorder': '#ffcc00',
+        'editor.wordHighlightStrongBackground': '#ffcc0080',
+        'editor.wordHighlightStrongBorder': '#ffcc00',
+        'editorOverviewRuler.selectionHighlightForeground': '#ffcc00',
+        'editorOverviewRuler.wordHighlightForeground': '#ffcc00',
+        'editorOverviewRuler.wordHighlightStrongForeground': '#ffcc00',
+        'minimap.selectionHighlight': '#ffcc00',
+        'minimap.selectionOccurrenceHighlight': '#ffcc00'
+      }
+    });
+
     if (!monaco.languages.getLanguages().some((l: any) => l.id === 'makefile')) {
       monaco.languages.register({ id: 'makefile' });
       monaco.languages.setMonarchTokensProvider('makefile', {
@@ -483,7 +699,7 @@ export default function App() {
             return acc;
           }, {});
           
-          let aiContextExists = Object.values(parsed).some((f: any) => f.path === 'ai_context.md');
+          let aiContextExists = Object.values(parsed).some((f: any) => f.path?.endsWith('ai_context.md'));
           if (!aiContextExists) {
              const aiContextId = `ai_context_${Date.now()}`;
              const aiContextFile = {
@@ -1052,6 +1268,8 @@ int main(int argc, char** argv) {
         setEditorTheme={setEditorTheme}
         showMinimap={showMinimap}
         setShowMinimap={setShowMinimap}
+        highlightCursorWord={highlightCursorWord}
+        setHighlightCursorWord={setHighlightCursorWord}
         handleEditTemplate={handleEditTemplate}
       />
 
@@ -1097,7 +1315,7 @@ int main(int argc, char** argv) {
                      activeFileId={activeFile} 
                      activeFilePath={filesData[activeFile]?.path || null} 
                      activeFileContent={filesData[activeFile]?.content || null} 
-                     projectContext={Object.values(filesData).find((f: any) => f.path === 'ai_context.md' || f.name === 'ai_context.md')?.content || null}
+                     projectContext={Object.values(filesData).find((f: any) => f.path?.endsWith('ai_context.md') || f.name?.endsWith('ai_context.md'))?.content || null}
                      onProposeMerge={setProposedMergeCode}
                      input={activeFile ? (chatInputs[activeFile] || '') : ''}
                      setInput={(val) => {
@@ -1133,6 +1351,8 @@ int main(int argc, char** argv) {
                   setActiveFile={setActiveFile}
                   closeTab={closeTab}
                   fetchGitDiffForActiveFile={fetchGitDiffForActiveFile}
+                  onBack={goBack}
+                  canGoBack={navHistory.length > 0}
                 />
           <div className="flex-1 overflow-hidden relative">
             {activeFile ? (

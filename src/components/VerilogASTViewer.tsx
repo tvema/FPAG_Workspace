@@ -50,10 +50,17 @@ const SignalNode = ({ signal, selectedNet, onSelectNet }: { signal: VerilogSigna
     return (
         <div 
            className={`flex items-center py-1 px-2 rounded w-fit select-none shrink-0 group cursor-pointer transition-colors ${isSelected ? 'bg-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.2)]' : 'hover:bg-white/5'}`}
-           onClick={() => onSelectNet?.(signal.name)}
+           onClick={(e) => {
+               if (e.ctrlKey || e.metaKey) {
+                   window.dispatchEvent(new CustomEvent('verilog-goto-signal', { detail: { signalName: signal.name } }));
+               } else if (onSelectNet) {
+                   onSelectNet(signal.name);
+               }
+           }}
+           title="Ctrl/Cmd+Click to view source code"
         >
             {renderIcon()}
-            <span className={`${isSelected ? 'text-emerald-300 font-bold' : 'text-slate-300'} group-hover:text-white transition-colors`}>{signal.name}</span>
+            <span className={`${isSelected ? 'text-emerald-300 font-bold' : 'text-slate-300'} group-hover:text-white hover-ctrl-underline decoration-emerald-500/50 transition-colors`}>{signal.name}</span>
             {signal.width !== undefined && signal.width !== 1 && (
                  <span className={`ml-2 text-[10px] uppercase border px-1 rounded block ${isSelected ? 'text-emerald-400 border-emerald-500/50 bg-emerald-900/30' : 'text-slate-500 border-slate-700/50 bg-slate-800/30'}`}>[{signal.width}]</span>
             )}
@@ -68,11 +75,18 @@ const InstanceNode = ({ inst, selectedNet, onSelectNet }: { inst: VerilogInstanc
       <div className="flex flex-col">
         <div 
            className="flex items-center cursor-pointer hover:bg-white/5 w-fit pr-3 py-1 rounded select-none group"
-           onClick={() => setIsExpanded(!isExpanded)}
+           onClick={(e) => {
+               if (e.ctrlKey || e.metaKey) {
+                   window.dispatchEvent(new CustomEvent('verilog-goto-module', { detail: { moduleName: inst.type } }));
+               } else {
+                   setIsExpanded(!isExpanded);
+               }
+           }}
+           title="Ctrl/Cmd+Click to view source code"
         >
           {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-slate-500 mr-1" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500 mr-1" />}
           <Cpu className="w-3.5 h-3.5 text-indigo-400 mr-2 opacity-80" />
-          <span className="text-slate-200 font-medium group-hover:text-white transition-colors">{inst.name}</span>
+          <span className="text-slate-200 font-medium group-hover:text-white hover-ctrl-underline decoration-indigo-500/50 transition-colors">{inst.name}</span>
           <span className="ml-2 text-slate-500 text-xs">({inst.type})</span>
         </div>
         {isExpanded && (
@@ -80,10 +94,16 @@ const InstanceNode = ({ inst, selectedNet, onSelectNet }: { inst: VerilogInstanc
             {inst.connections.map((conn, idx) => {
                 const isSelected = selectedNet === conn.connectedNet;
                 return (
-                  <div key={idx} className="flex items-center py-0.5 px-1 rounded hover:bg-white/5 text-xs select-none w-fit cursor-pointer" onClick={() => onSelectNet?.(conn.connectedNet)}>
+                  <div key={idx} className="flex items-center py-0.5 px-1 rounded hover:bg-white/5 text-xs select-none w-fit cursor-pointer group" onClick={(e) => {
+                      if (e.ctrlKey || e.metaKey) {
+                          window.dispatchEvent(new CustomEvent('verilog-goto-signal', { detail: { signalName: conn.connectedNet } }));
+                      } else if (onSelectNet) {
+                          onSelectNet(conn.connectedNet);
+                      }
+                  }} title="Ctrl/Cmd+Click to view source code">
                       <span className="text-slate-500 w-24">.{conn.portName}</span>
                       <span className="text-slate-600 mx-1">(</span>
-                      <span className={`${isSelected ? 'text-emerald-300 font-bold bg-emerald-500/20 px-1 rounded' : 'text-emerald-400/80'}`}>{conn.connectedNet}</span>
+                      <span className={`${isSelected ? 'text-emerald-300 font-bold bg-emerald-500/20 px-1 rounded' : 'text-emerald-400/80 hover-ctrl-underline decoration-emerald-500/50'}`}>{conn.connectedNet}</span>
                       <span className="text-slate-600 mx-1">)</span>
                   </div>
                 );

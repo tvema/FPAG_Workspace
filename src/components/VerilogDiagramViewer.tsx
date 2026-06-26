@@ -573,7 +573,15 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet, 
      }));
   }, [selectedNet, setEdges, setNodes, routingMode, edgesOnTop, parsedModules, selectedModuleIdx]);
 
-  const onEdgeClick = useCallback((_: any, edge: Edge) => { if (edge.data?.netName) handleSelectNet(edge.data.netName as string); }, [handleSelectNet]);
+  const onEdgeClick = useCallback((event: any, edge: Edge) => { 
+      if (edge.data?.netName) {
+          if (event.ctrlKey || event.metaKey) {
+              window.dispatchEvent(new CustomEvent('verilog-goto-signal', { detail: { signalName: edge.data.netName } }));
+          } else {
+              handleSelectNet(edge.data.netName as string); 
+          }
+      }
+  }, [handleSelectNet]);
   const onPaneClick = useCallback(() => handleSelectNet(null), [handleSelectNet]);
   const activeModule = parsedModules?.[selectedModuleIdx];
   const activeModuleName = activeModule?.name || 'unknown';
@@ -593,6 +601,18 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet, 
       if (!cached) { cached = { positions: {} }; diagramStateCache.set(activeModuleName, cached); }
       cached.viewport = viewport;
   }, [parsedModules, selectedModuleIdx]);
+
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+      if (event.ctrlKey || event.metaKey) {
+          if (node.type === 'instance') {
+              const instType = node.data.type as string;
+              window.dispatchEvent(new CustomEvent('verilog-goto-module', { detail: { moduleName: instType } }));
+          } else if (node.type === 'port') {
+              const portName = node.data.label as string;
+              window.dispatchEvent(new CustomEvent('verilog-goto-signal', { detail: { signalName: portName } }));
+          }
+      }
+  }, []);
 
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
       if (node.type === 'instance') {
@@ -699,6 +719,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet, 
          <div className="flex items-center gap-2 text-red-400"><AlertTriangle className="w-3 h-3" /> Unconnected Port</div>
          <div className="flex items-center gap-2 text-yellow-500 mt-1.5 font-semibold opacity-80">Click wires to trace</div>
          <div className="flex items-center gap-2 text-blue-400 mt-0.5 font-semibold opacity-80">Double-click instances to drill-down</div>
+         <div className="flex items-center gap-2 text-emerald-400 mt-0.5 font-semibold opacity-80">Ctrl/Cmd+Click instances or wires to view source</div>
       </div>
 
       <ReactFlow
@@ -707,6 +728,7 @@ function InnerDiagram({ content, selectedNet: externalSelectedNet, onSelectNet, 
         onNodeDragStop={onNodeDragStop} onMoveEnd={onMoveEnd}
         onEdgeClick={onEdgeClick} onPaneClick={onPaneClick}
         onNodeDoubleClick={onNodeDoubleClick}
+        onNodeClick={onNodeClick}
         elevateNodesOnSelect={false} elevateEdgesOnSelect={false}
         fitView fitViewOptions={{ padding: 0.1 }} minZoom={0.1} maxZoom={2} attributionPosition="bottom-right"
       >
