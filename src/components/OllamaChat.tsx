@@ -51,9 +51,33 @@ const CodeBlock = ({ lang, code, onAddFile, onProposeMerge }: { lang: string, co
     );
 };
 
-function MessageContent({ content, onAddFile, onProposeMerge }: { content: string, onAddFile: (path: string, content: string) => void, onProposeMerge: (code: string) => void }) {
+function MessageContent({ content, onAddFile, onProposeMerge, onProposeMultiMerge }: { content: string, onAddFile: (path: string, content: string) => void, onProposeMerge: (code: string) => void, onProposeMultiMerge?: (files: Record<string, string>) => void }) {
     const [viewMode, setViewMode] = useState<'render' | 'raw'>('render');
-    const parts = content.split(/(```[\s\S]*?```)/g);
+    
+    // Check if there are any <file path="..."> blocks
+    const multiFiles = useMemo(() => {
+        const fileRegex = /<file\s+path="([^"]+)">\s*([\s\S]*?)\s*<\/file>/g;
+        const matches = [...content.matchAll(fileRegex)];
+        if (matches.length > 0) {
+            const files: Record<string, string> = {};
+            matches.forEach(m => {
+                files[m[1]] = m[2];
+            });
+            return files;
+        }
+        return null;
+    }, [content]);
+
+    // Simple parser for standard code blocks
+    const parts = useMemo(() => {
+        if (multiFiles) {
+            // If we have file blocks, let's just strip them out of the regular rendering
+            // and we'll render them separately.
+            let strippedContent = content.replace(/<file\s+path="([^"]+)">\s*([\s\S]*?)\s*<\/file>/g, '\n[File block extracted]\n');
+            return strippedContent.split(/(```[\s\S]*?```)/g);
+        }
+        return content.split(/(```[\s\S]*?```)/g);
+    }, [content, multiFiles]);
     
     const handleMergeSelection = () => {
         const text = window.getSelection()?.toString();
@@ -89,13 +113,38 @@ function MessageContent({ content, onAddFile, onProposeMerge }: { content: strin
                         }
                         return <span key={i}>{part}</span>;
                     })}
+                    
+                    {multiFiles && (
+                        <div className="mt-4 border border-indigo-500/20 rounded-md overflow-hidden bg-indigo-500/5">
+                            <div className="bg-indigo-500/10 px-3 py-2 flex justify-between items-center text-xs font-semibold text-indigo-300">
+                                <span>Multiple Files Modified ({Object.keys(multiFiles).length})</span>
+                                {onProposeMultiMerge && (
+                                    <button 
+                                        onClick={() => onProposeMultiMerge(multiFiles)}
+                                        className="bg-indigo-500 text-white px-2 py-1 rounded hover:bg-indigo-400 transition-colors shadow-sm"
+                                    >
+                                        Review Merge
+                                    </button>
+                                )}
+                            </div>
+                            <div className="p-2 space-y-1">
+                                {Object.keys(multiFiles).map(path => (
+                                    <div key={path} className="text-[11px] font-mono text-slate-400 bg-black/20 px-2 py-1 rounded">
+                                        {path}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
     );
 }
 
-export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any> }) {
+export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles, onProposeMultiMerge }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any>, onProposeMultiMerge?: (files: Record<string, string>) => void }) {
+  const [chatMode, setChatMode] = useState<'file' | 'project'>('file');
+
   const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>(() => {
     try {
       const stored = localStorage.getItem('ai_chat_history');
@@ -112,9 +161,11 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
   const [errorMap, setErrorMap] = useState<Record<string, string | null>>({});
 
-  const messages = activeFileId ? (messagesMap[activeFileId] || []) : [];
-  const isLoading = activeFileId ? (loadingMap[activeFileId] || false) : false;
-  const error = activeFileId ? (errorMap[activeFileId] || null) : null;
+  const actualTargetId = chatMode === 'project' ? '_project_global' : activeFileId;
+
+  const messages = actualTargetId ? (messagesMap[actualTargetId] || []) : [];
+  const isLoading = actualTargetId ? (loadingMap[actualTargetId] || false) : false;
+  const error = actualTargetId ? (errorMap[actualTargetId] || null) : null;
 
   const [showSettings, setShowSettings] = useState(false);
   
@@ -127,13 +178,13 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   });
 
   const setError = (err: string | null, targetFileId?: string) => {
-    const fileId = targetFileId || activeFileId;
+    const fileId = targetFileId || actualTargetId;
     if (!fileId) return;
     setErrorMap(prev => ({ ...prev, [fileId]: err }));
   };
 
   const setMessages = (updater: Message[] | ((prev: Message[]) => Message[]), targetFileId?: string) => {
-    const fileId = targetFileId || activeFileId;
+    const fileId = targetFileId || actualTargetId;
     if (!fileId) return;
     setMessagesMap(prev => ({
       ...prev,
@@ -142,7 +193,7 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   };
 
   const setIsLoading = (loading: boolean, targetFileId?: string) => {
-    const fileId = targetFileId || activeFileId;
+    const fileId = targetFileId || actualTargetId;
     if (!fileId) return;
     setLoadingMap(prev => ({ ...prev, [fileId]: loading }));
   };
@@ -202,17 +253,15 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   }, [messages, isLoading]);
 
   useEffect(() => {
-    if (activeFileId) {
+    if (actualTargetId && actualTargetId !== '_project_global') {
       // Background fetch to update cache from server
-      fetch(`/api/messages/${activeFileId}`)
+      fetch(`/api/messages/${actualTargetId}`)
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) {
             setMessagesMap(m => {
-              // Only update if there's an actual change to avoid unnecessary re-renders
-              // Simple length check or stringify comparison
-              if (JSON.stringify(m[activeFileId]) !== JSON.stringify(data)) {
-                return { ...m, [activeFileId]: data };
+              if (JSON.stringify(m[actualTargetId]) !== JSON.stringify(data)) {
+                return { ...m, [actualTargetId]: data };
               }
               return m;
             });
@@ -221,13 +270,20 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
         .catch(err => console.error("Failed to load messages", err));
         
       setMessagesMap(prev => {
-        if (!prev[activeFileId]) {
-          return { ...prev, [activeFileId]: [] };
+        if (!prev[actualTargetId]) {
+          return { ...prev, [actualTargetId]: [] };
         }
         return prev;
       });
+    } else if (actualTargetId === '_project_global') {
+        setMessagesMap(prev => {
+            if (!prev['_project_global']) {
+              return { ...prev, ['_project_global']: [] };
+            }
+            return prev;
+          });
     }
-  }, [activeFileId]);
+  }, [actualTargetId]);
 
   const saveMessage = async (role: string, content: string, fileId: string) => {
     if (!fileId) return;
@@ -243,7 +299,7 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   };
 
   const handleSend = async () => {
-    const targetFileId = activeFileId;
+    const targetFileId = actualTargetId;
     if (!targetFileId || !input.trim() || isLoading) return;
 
     const userMessage = input.trim();
@@ -256,48 +312,60 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
       promptPrefix += `[Global Project Context / Instructions:\n\`\`\`\n${projectContext}\n\`\`\`\n]\n\n`;
     }
 
-    // Extract file references from the message (e.g. {verilog/src/file.v})
-    const referenceRegex = /\{([^}]+)\}/g;
-    const matches = [...userMessage.matchAll(referenceRegex)];
-    const referencedPaths = [...new Set(matches.map(m => m[1].trim()))];
-    
-    if (referencedPaths.length > 0 && allFiles) {
-      promptPrefix += `[Referenced Files Context:]\n`;
-      referencedPaths.forEach((refPath) => {
-        const [filePath, moduleName, signalName] = refPath.split(':');
-        const theFile = Object.values(allFiles).find((f: any) => f.path === filePath || f.name === filePath);
+    if (chatMode === 'project') {
+       promptPrefix += `[Project Mode Context: Below are the files in the current project.]\n`;
+       if (allFiles) {
+           Object.values(allFiles).forEach((f: any) => {
+               if (f.path.endsWith('.v') || f.path.endsWith('.sv') || f.path.endsWith('.c') || f.path.endsWith('.cpp') || f.path.endsWith('.h') || f.path.endsWith('.tcl') || f.path.endsWith('.sdc') || f.path.endsWith('Makefile') || f.path.endsWith('.md')) {
+                 promptPrefix += `\n--- FILE: ${f.path} ---\n\`\`\`\n${f.content}\n\`\`\`\n--- END FILE ---\n`;
+               }
+           });
+       }
+       promptPrefix += `\n[Instruction: You are an AI assistant in "Project Mode". You can modify multiple files to implement the user's request. Output your modified files in the following XML format:\n<file path="path/to/file">\n// full new file content here\n</file>\nProvide your explanation first, then output the XML blocks.]\n\n`;
+    } else {
+        // Extract file references from the message (e.g. {verilog/src/file.v})
+        const referenceRegex = /\{([^}]+)\}/g;
+        const matches = [...userMessage.matchAll(referenceRegex)];
+        const referencedPaths = [...new Set(matches.map(m => m[1].trim()))];
         
-        if (theFile) {
-           if (!moduleName) {
-               promptPrefix += `\n--- START OF REFERENCED FILE: ${theFile.path} ---\n\`\`\`\n${theFile.content}\n\`\`\`\n--- END OF REFERENCED FILE ---\n`;
-           } else {
-               if (theFile.path.endsWith('.v') || theFile.path.endsWith('.sv')) {
-                   try {
-                       const modules = parseVerilog(theFile.content);
-                       const mod = modules.find(m => m.name === moduleName);
-                       if (mod) {
-                           if (!signalName) {
-                               promptPrefix += `\n--- START OF REFERENCED MODULE HEADER: ${theFile.path}:${mod.name} ---\n\`\`\`verilog\n${mod.header}\n\`\`\`\n--- END OF REFERENCED MODULE HEADER ---\n`;
-                           } else {
-                               const sig = mod.signals.find(s => s.name === signalName);
-                               if (sig) {
-                                   promptPrefix += `\n--- START OF REFERENCED SIGNAL: ${theFile.path}:${mod.name}:${sig.name} ---\n\`\`\`verilog\n${sig.declaration}\n\`\`\`\n--- END OF REFERENCED SIGNAL ---\n`;
+        if (referencedPaths.length > 0 && allFiles) {
+          promptPrefix += `[Referenced Files Context:]\n`;
+          referencedPaths.forEach((refPath) => {
+            const [filePath, moduleName, signalName] = refPath.split(':');
+            const theFile = Object.values(allFiles).find((f: any) => f.path === filePath || f.name === filePath);
+            
+            if (theFile) {
+               if (!moduleName) {
+                   promptPrefix += `\n--- START OF REFERENCED FILE: ${theFile.path} ---\n\`\`\`\n${theFile.content}\n\`\`\`\n--- END OF REFERENCED FILE ---\n`;
+               } else {
+                   if (theFile.path.endsWith('.v') || theFile.path.endsWith('.sv')) {
+                       try {
+                           const modules = parseVerilog(theFile.content);
+                           const mod = modules.find(m => m.name === moduleName);
+                           if (mod) {
+                               if (!signalName) {
+                                   promptPrefix += `\n--- START OF REFERENCED MODULE HEADER: ${theFile.path}:${mod.name} ---\n\`\`\`verilog\n${mod.header}\n\`\`\`\n--- END OF REFERENCED MODULE HEADER ---\n`;
+                               } else {
+                                   const sig = mod.signals.find(s => s.name === signalName);
+                                   if (sig) {
+                                       promptPrefix += `\n--- START OF REFERENCED SIGNAL: ${theFile.path}:${mod.name}:${sig.name} ---\n\`\`\`verilog\n${sig.declaration}\n\`\`\`\n--- END OF REFERENCED SIGNAL ---\n`;
+                                   }
                                }
                            }
-                       }
-                   } catch (e) {}
+                       } catch (e) {}
+                   }
                }
-           }
+            }
+          });
+          promptPrefix += `\n`;
         }
-      });
-      promptPrefix += `\n`;
-    }
 
-    if (activeFilePath) {
-      promptPrefix += `[Context: User is currently working on file: ${activeFilePath}]\n`;
-      if (activeFileContent) {
-        promptPrefix += `[Current File Content:\n\`\`\`\n${activeFileContent}\n\`\`\`\n]\n[Instruction: Below is the user's request. Modify the code to fulfill the request. When providing the updated code, please output the FULL file content with your changes integrated, preserving the rest of the existing code so it can be directly merged. IMPORTANT: Provide your textual explanation FIRST, and output the final code block LAST.]\n\n`;
-      }
+        if (activeFilePath) {
+          promptPrefix += `[Context: User is currently working on file: ${activeFilePath}]\n`;
+          if (activeFileContent) {
+            promptPrefix += `[Current File Content:\n\`\`\`\n${activeFileContent}\n\`\`\`\n]\n[Instruction: Below is the user's request. Modify the code to fulfill the request. When providing the updated code, please output the FULL file content with your changes integrated, preserving the rest of the existing code so it can be directly merged. IMPORTANT: Provide your textual explanation FIRST, and output the final code block LAST.]\n\n`;
+          }
+        }
     }
 
     const newMessageObj: Message = { role: 'user', content: userMessage };
@@ -411,10 +479,20 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
       {/* Header */}
       <div className="h-14 border-b border-white/5 flex items-center justify-between px-4 bg-[#121214] shrink-0">
         <div className="flex items-center gap-2">
-          <div className="bg-indigo-500/20 p-1.5 rounded-md border border-indigo-500/30">
-            <Bot className="w-4 h-4 text-indigo-400" />
+          <div className="flex bg-black/40 p-1 rounded-lg">
+            <button 
+              onClick={() => setChatMode('file')}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${chatMode === 'file' ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:text-slate-300'}`}
+            >
+              File Mode
+            </button>
+            <button 
+              onClick={() => setChatMode('project')}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${chatMode === 'project' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-slate-300'}`}
+            >
+              Project Mode
+            </button>
           </div>
-          <h2 className="text-sm font-semibold text-slate-200">AI Assistant</h2>
         </div>
         <div className="flex items-center gap-2">
           <button 
@@ -514,7 +592,7 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
                   ? 'bg-indigo-500/10 text-indigo-100/90 whitespace-pre-wrap text-[13px] leading-relaxed p-3 rounded-lg' 
                   : 'text-slate-300 w-full'
               }`}>
-                {msg.role === 'user' ? msg.content : <MessageContent content={msg.content} onAddFile={onAddFile} onProposeMerge={onProposeMerge} />}
+                {msg.role === 'user' ? msg.content : <MessageContent content={msg.content} onAddFile={onAddFile} onProposeMerge={onProposeMerge} onProposeMultiMerge={onProposeMultiMerge} />}
               </div>
             </div>
           ))

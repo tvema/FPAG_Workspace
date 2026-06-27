@@ -33,3 +33,10 @@ It is specifically built for working with Verilog and Intel Quartus Prime files.
 9. **Matching VCD and Verilog Signals**:
    - VCD output signals often contain bit slice dimensions appended to their names (e.g., `count[7:0]`), whereas the statically parsed Verilog AST stores the normalized signal name (e.g., `count`).
    - ALWAYS strip bit slice indexing strings (using `.split('[')[0].trim()`) from the VCD signal name before matching or grouping it against `VerilogModule` signals to correctly identify its `ioType` (input/output) or internal type. Failure to do so will map inputs/outputs to "Others" due to string mismatch.
+
+# Multi-File AI Logic
+10. **Project-Level AI Assistant**:
+   - The AI Assistant chat has two modes: "File Mode" and "Project Mode". 
+   - When in "Project Mode", the context includes all relevant FPGA source files (`.v`, `.c`, `.cpp`, `.md`, `Makefile`, etc.).
+   - The AI will output changes in `<file path="..."></file>` blocks.
+   - The client parses these blocks and renders a `MultiFileMergeModal` to let the user review and batch-merge changes across multiple files simultaneously.

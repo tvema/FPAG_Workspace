@@ -11,6 +11,7 @@ import { OllamaChat } from './components/OllamaChat';
 import { GitCommitDialog } from './components/GitCommitDialog';
 import { MessageOverlay } from './components/MessageOverlay';
 import { DiffViewerModal } from './components/DiffViewerModal';
+import { MultiFileMergeModal } from './components/MultiFileMergeModal';
 import { GitDiffModal } from './components/GitDiffModal';
 import { WaveformViewerViewState } from './components/WaveformViewer';
 import { TestbenchDialog } from './components/TestbenchDialog';
@@ -88,6 +89,7 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [chatInputs, setChatInputs] = useState<Record<string, string>>({});
   const [proposedMergeCode, setProposedMergeCode] = useState<string | null>(null);
+  const [proposedMultiMerge, setProposedMultiMerge] = useState<Record<string, string> | null>(null);
 
   const [projects, setProjects] = useState<{id: string, name: string}[]>([]);
 
@@ -1317,6 +1319,7 @@ int main(int argc, char** argv) {
                      activeFileContent={filesData[activeFile]?.content || null} 
                      projectContext={Object.values(filesData).find((f: any) => f.path?.endsWith('ai_context.md') || f.name?.endsWith('ai_context.md'))?.content || null}
                      onProposeMerge={setProposedMergeCode}
+                     onProposeMultiMerge={setProposedMultiMerge}
                      input={activeFile ? (chatInputs[activeFile] || '') : ''}
                      setInput={(val) => {
                        const aid = activeFile || '_global';
@@ -1528,6 +1531,14 @@ int main(int argc, char** argv) {
         activeFile={activeFile}
         handleAddFile={handleAddFile}
       />
+      
+      <MultiFileMergeModal 
+        proposedMultiMerge={proposedMultiMerge}
+        setProposedMultiMerge={setProposedMultiMerge}
+        filesData={filesData}
+        handleAddFile={handleAddFile}
+      />
+
       <TestbenchDialog
         isOpen={testbenchDialog.isOpen}
         onClose={() => setTestbenchDialog(p => ({ ...p, isOpen: false }))}
