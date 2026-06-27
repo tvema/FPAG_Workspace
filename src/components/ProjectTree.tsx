@@ -36,6 +36,7 @@ interface ProjectTreeProps {
   setIsChatOpen: React.Dispatch<React.SetStateAction<boolean>>;
   handleGitAction: (action: string, file: string) => void;
   handleConfigureTestbench?: (folderPath: string) => void;
+  chatMode?: 'file' | 'project';
 }
 
 export function ProjectTree({
@@ -58,7 +59,8 @@ export function ProjectTree({
   setChatInputs,
   setIsChatOpen,
   handleGitAction,
-  handleConfigureTestbench
+  handleConfigureTestbench,
+  chatMode
 }: ProjectTreeProps) {
   const renderTree = (nodes: Record<string, TreeNode>, depth: number = 0) => {
     return Object.values(nodes)
@@ -263,7 +265,7 @@ export function ProjectTree({
                         <DropdownMenu.Item onClick={(e) => { 
                           e.stopPropagation(); 
                           setChatInputs((prev) => {
-                             const aid = activeFile || '_global';
+                             const aid = chatMode === 'project' ? '_project_global' : (activeFile || '_global');
                              const current = prev[aid] || '';
                              return { ...prev, [aid]: current + (current.endsWith(' ') || current === '' ? '' : ' ') + `{${node.path}}` };
                           }); 

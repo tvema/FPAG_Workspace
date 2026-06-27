@@ -142,8 +142,7 @@ function MessageContent({ content, onAddFile, onProposeMerge, onProposeMultiMerg
     );
 }
 
-export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles, onProposeMultiMerge }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any>, onProposeMultiMerge?: (files: Record<string, string>) => void }) {
-  const [chatMode, setChatMode] = useState<'file' | 'project'>('file');
+export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles, onProposeMultiMerge, chatMode, setChatMode }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any>, onProposeMultiMerge?: (files: Record<string, string>) => void, chatMode: 'file' | 'project', setChatMode: (mode: 'file' | 'project') => void }) {
 
   const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>(() => {
     try {

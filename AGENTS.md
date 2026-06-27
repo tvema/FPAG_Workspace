@@ -38,5 +38,6 @@ It is specifically built for working with Verilog and Intel Quartus Prime files.
 10. **Project-Level AI Assistant**:
    - The AI Assistant chat has two modes: "File Mode" and "Project Mode". 
    - When in "Project Mode", the context includes all relevant FPGA source files (`.v`, `.c`, `.cpp`, `.md`, `Makefile`, etc.).
+   - The chat input (`chatInputs`) in "Project Mode" is global and shared across all files (keyed by `_project_global`), ensuring context and prompts aren't lost when switching files.
    - The AI will output changes in `<file path="..."></file>` blocks.
    - The client parses these blocks and renders a `MultiFileMergeModal` to let the user review and batch-merge changes across multiple files simultaneously.

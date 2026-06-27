@@ -87,6 +87,7 @@ export default function App() {
   };
   
   const [isChatOpen, setIsChatOpen] = useState(true);
+  const [chatMode, setChatMode] = useState<'file' | 'project'>('file');
   const [chatInputs, setChatInputs] = useState<Record<string, string>>({});
   const [proposedMergeCode, setProposedMergeCode] = useState<string | null>(null);
   const [proposedMultiMerge, setProposedMultiMerge] = useState<Record<string, string> | null>(null);
@@ -1377,9 +1378,15 @@ int main(int argc, char** argv) {
                      projectContext={Object.values(filesData).find((f: any) => f.path?.endsWith('ai_context.md') || f.name?.endsWith('ai_context.md'))?.content || null}
                      onProposeMerge={setProposedMergeCode}
                      onProposeMultiMerge={setProposedMultiMerge}
-                     input={activeFile ? (chatInputs[activeFile] || '') : ''}
+                     chatMode={chatMode}
+                     setChatMode={setChatMode}
+                     input={
+                       chatMode === 'project' 
+                         ? (chatInputs['_project_global'] || '') 
+                         : (activeFile ? (chatInputs[activeFile] || '') : '')
+                     }
                      setInput={(val) => {
-                       const aid = activeFile || '_global';
+                       const aid = chatMode === 'project' ? '_project_global' : (activeFile || '_global');
                        setChatInputs(prev => ({
                          ...prev, 
                          [aid]: val as unknown as string
@@ -1575,6 +1582,7 @@ int main(int argc, char** argv) {
                   setIsChatOpen={setIsChatOpen}
                   handleGitAction={handleGitAction}
                   handleConfigureTestbench={handleConfigureTestbench}
+                  chatMode={chatMode}
                 />
               </div>
             </div>
