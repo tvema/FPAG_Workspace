@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, ChevronDown, FolderOpen, Box, MoreVertical, FilePlus, FolderPlus, FileCode2, Upload, Trash2, Link, Type, Hash, ArrowLeftRight, ArrowRightToLine, ArrowRightFromLine } from 'lucide-react';
+import { ChevronRight, ChevronDown, FolderOpen, Box, MoreVertical, FilePlus, FolderPlus, FileCode2, Upload, Trash2, Link, Type, Hash, ArrowLeftRight, ArrowRightToLine, ArrowRightFromLine, Settings2 } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
 export type TreeNode = {
@@ -35,6 +35,7 @@ interface ProjectTreeProps {
   setChatInputs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setIsChatOpen: React.Dispatch<React.SetStateAction<boolean>>;
   handleGitAction: (action: string, file: string) => void;
+  handleConfigureTestbench?: (folderPath: string) => void;
 }
 
 export function ProjectTree({
@@ -56,7 +57,8 @@ export function ProjectTree({
   setLineJumpTarget,
   setChatInputs,
   setIsChatOpen,
-  handleGitAction
+  handleGitAction,
+  handleConfigureTestbench
 }: ProjectTreeProps) {
   const renderTree = (nodes: Record<string, TreeNode>, depth: number = 0) => {
     return Object.values(nodes)
@@ -149,6 +151,17 @@ export function ProjectTree({
                          </DropdownMenu.Item>
                          )}
                          <DropdownMenu.Separator className="h-px bg-white/5 my-1" />
+                         {isTestbenchFolder && handleConfigureTestbench && (
+                         <DropdownMenu.Item 
+                           onClick={(e) => { 
+                              e.stopPropagation(); 
+                              handleConfigureTestbench(node.path);
+                           }} 
+                           className="px-3 py-1.5 text-xs text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300 cursor-pointer outline-none flex items-center gap-2"
+                         >
+                             <Settings2 className="w-3 h-3" /> Configure Testbench
+                         </DropdownMenu.Item>
+                         )}
                          <DropdownMenu.Item 
                            onClick={(e) => { 
                               e.stopPropagation(); 

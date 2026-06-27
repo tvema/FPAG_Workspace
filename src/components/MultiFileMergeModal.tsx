@@ -15,10 +15,11 @@ export function MultiFileMergeModal({ proposedMultiMerge, setProposedMultiMerge,
   const [acceptedFiles, setAcceptedFiles] = useState<Set<string>>(new Set());
   const [rejectedFiles, setRejectedFiles] = useState<Set<string>>(new Set());
 
-  // Set initial selected file if available
   React.useEffect(() => {
-    if (proposedMultiMerge && Object.keys(proposedMultiMerge).length > 0 && !selectedFile) {
-        setSelectedFile(Object.keys(proposedMultiMerge)[0]);
+    if (proposedMultiMerge && Object.keys(proposedMultiMerge).length > 0) {
+        if (!selectedFile || !proposedMultiMerge[selectedFile]) {
+            setSelectedFile(Object.keys(proposedMultiMerge)[0]);
+        }
     }
   }, [proposedMultiMerge]);
 
@@ -61,12 +62,14 @@ export function MultiFileMergeModal({ proposedMultiMerge, setProposedMultiMerge,
     setProposedMultiMerge(null);
     setAcceptedFiles(new Set());
     setRejectedFiles(new Set());
+    setSelectedFile(null);
   };
 
   const handleCancel = () => {
     setProposedMultiMerge(null);
     setAcceptedFiles(new Set());
     setRejectedFiles(new Set());
+    setSelectedFile(null);
   };
 
   const getLanguage = (path: string) => {

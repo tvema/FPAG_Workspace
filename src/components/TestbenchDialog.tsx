@@ -6,12 +6,16 @@ export function TestbenchDialog({
   isOpen,
   onClose,
   filesData,
-  onCreate
+  onCreate,
+  initialData,
+  isEdit
 }: {
   isOpen: boolean;
   onClose: () => void;
   filesData: Record<string, any>;
-  onCreate: (tbName: string, filesToInclude: string[], makefileTemplate: string, tbExt: string) => void;
+  onCreate: (tbName: string, filesToInclude: string[], makefileTemplate: string, tbExt: string, isEdit: boolean) => void;
+  initialData?: { tbName: string, filesToInclude: string[], tbExt: string, makefileTemplate?: string };
+  isEdit?: boolean;
 }) {
   const [tbName, setTbName] = useState('tb_module');
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -28,12 +32,19 @@ export function TestbenchDialog({
   // Reset when opened
   useEffect(() => {
     if (isOpen) {
-      setTbName('tb_module');
-      setSelectedFiles(new Set());
-      setTbExt('.v');
-      setMakefileTemplate(getTemplate('.v'));
+      if (isEdit && initialData) {
+        setTbName(initialData.tbName);
+        setSelectedFiles(new Set(initialData.filesToInclude));
+        setTbExt(initialData.tbExt || '.v');
+        setMakefileTemplate(initialData.makefileTemplate || getTemplate(initialData.tbExt || '.v'));
+      } else {
+        setTbName('tb_module');
+        setSelectedFiles(new Set());
+        setTbExt('.v');
+        setMakefileTemplate(getTemplate('.v'));
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, isEdit, initialData]);
 
   if (!isOpen) return null;
 
@@ -54,7 +65,7 @@ export function TestbenchDialog({
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <div className="bg-[#16161a] border border-white/10 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
         <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-[#121214]">
-          <h3 className="text-sm font-medium text-slate-200">Create Testbench</h3>
+          <h3 className="text-sm font-medium text-slate-200">{isEdit ? 'Configure Testbench' : 'Create Testbench'}</h3>
           <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
             <X className="w-4 h-4" />
           </button>
@@ -68,7 +79,8 @@ export function TestbenchDialog({
                 type="text" 
                 value={tbName}
                 onChange={(e) => setTbName(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                disabled={isEdit}
+                className="w-full bg-black/40 border border-white/10 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-50"
                 placeholder="e.g. tb_adder"
                 autoFocus
               />
@@ -157,13 +169,13 @@ export function TestbenchDialog({
           </button>
           <button 
             onClick={() => {
-                onCreate(tbName, Array.from(selectedFiles), makefileTemplate, tbExt);
+                onCreate(tbName, Array.from(selectedFiles), makefileTemplate, tbExt, !!isEdit);
                 onClose();
             }}
             disabled={!tbName || selectedFiles.size === 0 || !makefileTemplate.trim()}
             className="px-4 py-2 text-xs font-medium bg-emerald-500 hover:bg-emerald-400 text-slate-900 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Generate
+            {isEdit ? 'Save Changes' : 'Generate'}
           </button>
         </div>
       </div>

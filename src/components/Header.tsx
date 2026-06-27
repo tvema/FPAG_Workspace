@@ -215,11 +215,11 @@ export function Header({
               <DropdownMenu.Item onClick={() => setEditorTheme('zstate-dark')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'zstate-dark' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
                 zstate-dark
               </DropdownMenu.Item>
-              <DropdownMenu.Item onClick={() => setEditorTheme('light')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'light' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
-                light
+              <DropdownMenu.Item onClick={() => setEditorTheme('zstate-light')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'zstate-light' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+                zstate-light
               </DropdownMenu.Item>
-              <DropdownMenu.Item onClick={() => setEditorTheme('hc-black')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'hc-black' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
-                hc-black
+              <DropdownMenu.Item onClick={() => setEditorTheme('zstate-hc-black')} className={`px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 ${editorTheme === 'zstate-hc-black' ? 'text-emerald-400 bg-white/5' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+                zstate-hc-black
               </DropdownMenu.Item>
               <DropdownMenu.Separator className="h-px bg-white/10 my-1" />
               <DropdownMenu.Item onClick={() => setShowMinimap(p => !p)} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center justify-between text-slate-300 hover:bg-white/5 hover:text-white">

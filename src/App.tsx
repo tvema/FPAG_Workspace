@@ -106,6 +106,8 @@ export default function App() {
     parentPath: string;
     filesToInclude: string[];
     tbName: string;
+    isEdit?: boolean;
+    initialData?: { tbName: string, filesToInclude: string[], tbExt: string, makefileTemplate?: string };
   }>({ isOpen: false, parentPath: '', filesToInclude: [], tbName: 'tb_module' });
 
   const [buildDialog, setBuildDialog] = useState<{
@@ -398,23 +400,39 @@ export default function App() {
   }), [showMinimap, highlightCursorWord]);
 
   const handleEditorBeforeMount = useCallback((monaco: any) => {
+    const sharedColors = {
+        'editor.selectionHighlightBackground': '#ffaa0060',
+        'editor.selectionHighlightBorder': '#ffaa00',
+        'editor.wordHighlightBackground': '#ffaa0060',
+        'editor.wordHighlightBorder': '#ffaa00',
+        'editor.wordHighlightStrongBackground': '#ffaa0080',
+        'editor.wordHighlightStrongBorder': '#ffaa00',
+        'editorOverviewRuler.selectionHighlightForeground': '#ffaa00',
+        'editorOverviewRuler.wordHighlightForeground': '#ffaa00',
+        'editorOverviewRuler.wordHighlightStrongForeground': '#ffaa00',
+        'minimap.selectionHighlight': '#ffaa00',
+        'minimap.selectionOccurrenceHighlight': '#ffaa00'
+    };
+
     monaco.editor.defineTheme('zstate-dark', {
       base: 'vs-dark',
       inherit: true,
       rules: [],
-      colors: {
-        'editor.selectionHighlightBackground': '#ffcc0060',
-        'editor.selectionHighlightBorder': '#ffcc00',
-        'editor.wordHighlightBackground': '#ffcc0060',
-        'editor.wordHighlightBorder': '#ffcc00',
-        'editor.wordHighlightStrongBackground': '#ffcc0080',
-        'editor.wordHighlightStrongBorder': '#ffcc00',
-        'editorOverviewRuler.selectionHighlightForeground': '#ffcc00',
-        'editorOverviewRuler.wordHighlightForeground': '#ffcc00',
-        'editorOverviewRuler.wordHighlightStrongForeground': '#ffcc00',
-        'minimap.selectionHighlight': '#ffcc00',
-        'minimap.selectionOccurrenceHighlight': '#ffcc00'
-      }
+      colors: sharedColors
+    });
+
+    monaco.editor.defineTheme('zstate-light', {
+      base: 'vs',
+      inherit: true,
+      rules: [],
+      colors: sharedColors
+    });
+
+    monaco.editor.defineTheme('zstate-hc-black', {
+      base: 'hc-black',
+      inherit: true,
+      rules: [],
+      colors: sharedColors
     });
 
     if (!monaco.languages.getLanguages().some((l: any) => l.id === 'makefile')) {
@@ -920,15 +938,17 @@ export default function App() {
       }
   };
 
-  const handleCreateTestbench = async (tbName: string, filesToInclude: string[], makefileTemplate: string, tbExt: string) => {
+  const handleCreateTestbench = async (tbName: string, filesToInclude: string[], makefileTemplate: string, tbExt: string, isEdit: boolean = false) => {
       const parent = testbenchDialog.parentPath;
       const tbFolder = parent + tbName + '/';
 
       // 1. Generate testbench file
       const tbPath = tbFolder + tbName + tbExt;
-      let tbContent = '';
-      if (tbExt === '.v') {
-         tbContent = `\`timescale 1ns / 1ps
+      const fileId = `${activeProject}_${tbPath.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      if (!isEdit || !filesData[fileId]) {
+          let tbContent = '';
+          if (tbExt === '.v') {
+             tbContent = `\`timescale 1ns / 1ps
 
 module ${tbName};
 
@@ -951,8 +971,8 @@ module ${tbName};
 
 endmodule
 `;
-      } else {
-         tbContent = `#include <iostream>
+          } else {
+             tbContent = `#include <iostream>
 #include <verilated.h>
 // Include your verilated model header here:
 // #include "V${tbName}.h"
@@ -970,8 +990,9 @@ int main(int argc, char** argv) {
     return 0;
 }
 `;
+          }
+          await handleAddFile(tbPath, tbContent, activeProject || undefined);
       }
-      await handleAddFile(tbPath, tbContent, activeProject || undefined);
 
       // 2. Generate Makefile
       const makefilePath = tbFolder + 'Makefile';
@@ -993,17 +1014,53 @@ int main(int argc, char** argv) {
 
       // 3. Create a link to the output VCD file
       const vcdPath = tbFolder + tbName + '.vcd';
-      await handleAddFile(vcdPath, 'Waiting for generated VCD file after Make...', activeProject || undefined, true);
+      const vcdId = `${activeProject}_${vcdPath.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      if (!isEdit || !filesData[vcdId]) {
+          await handleAddFile(vcdPath, 'Waiting for generated VCD file after Make...', activeProject || undefined, true);
+      }
 
       // 4. Save tb_config.json
       const tbConfigPath = tbFolder + 'tb_config.json';
       const tbConfigData = {
           tbName,
-          filesToInclude: [...filesToInclude, tbPath],
+          filesToInclude: filesToInclude.includes(tbPath) ? filesToInclude : [...filesToInclude, tbPath],
           tbExt,
-          vcdName: tbName + '.vcd'
+          vcdName: tbName + '.vcd',
+          makefileTemplate
       };
       await handleAddFile(tbConfigPath, JSON.stringify(tbConfigData, null, 2), activeProject || undefined);
+  };
+
+  const handleConfigureTestbench = (folderPath: string) => {
+    // Determine path, normally folderPath ends with / or we just add it
+    const tbFolder = folderPath.endsWith('/') ? folderPath : folderPath + '/';
+    const configPath = tbFolder + 'tb_config.json';
+    
+    const configNode = Object.values(filesData).find((f: any) => f.path === configPath);
+    if (configNode && configNode.content) {
+        try {
+            const configData = JSON.parse(configNode.content);
+            const parent = tbFolder.slice(0, tbFolder.length - 1 - configData.tbName.length); // Try to infer parent
+            setTestbenchDialog({
+                isOpen: true,
+                parentPath: parent || '',
+                filesToInclude: configData.filesToInclude || [],
+                tbName: configData.tbName,
+                isEdit: true,
+                initialData: {
+                    tbName: configData.tbName,
+                    filesToInclude: configData.filesToInclude || [],
+                    tbExt: configData.tbExt || '.v',
+                    makefileTemplate: configData.makefileTemplate
+                }
+            });
+        } catch (e) {
+            console.error("Failed to parse tb_config.json", e);
+            alert("Failed to read testbench configuration.");
+        }
+    } else {
+        alert("tb_config.json not found in the testbench folder.");
+    }
   };
 
   const handleGitAction = async (action: 'init' | 'add' | 'rm' | 'commit', path?: string, commitMessage?: string) => {
@@ -1517,6 +1574,7 @@ int main(int argc, char** argv) {
                   setChatInputs={setChatInputs}
                   setIsChatOpen={setIsChatOpen}
                   handleGitAction={handleGitAction}
+                  handleConfigureTestbench={handleConfigureTestbench}
                 />
               </div>
             </div>
@@ -1544,6 +1602,8 @@ int main(int argc, char** argv) {
         onClose={() => setTestbenchDialog(p => ({ ...p, isOpen: false }))}
         filesData={filesData}
         onCreate={handleCreateTestbench}
+        isEdit={testbenchDialog.isEdit}
+        initialData={testbenchDialog.initialData}
       />
       
       <GitDiffModal 
