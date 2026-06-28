@@ -1,7 +1,8 @@
 import { Link, Box, FolderPlus, FilePlus, Upload } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import JSZip from 'jszip';
-import Editor from '@monaco-editor/react';
+import Editor, { useMonaco } from '@monaco-editor/react';
+import { CodeEditorWrapper } from './components/CodeEditorWrapper';
 import debounce from 'lodash.debounce';
 
 import { useInterval } from './hooks/useInterval';
@@ -100,6 +101,7 @@ export default function App() {
   const [highlightCursorWord, setHighlightCursorWord] = useState<boolean>(false);
   const [lineJumpTarget, setLineJumpTarget] = useState<number | string | null>(null);
   const editorRef = React.useRef<any>(null);
+  const monaco = useMonaco();
   const [isExporting, setIsExporting] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
 
@@ -456,6 +458,12 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+    if (monaco) {
+      handleEditorBeforeMount(monaco);
+    }
+  }, [monaco, handleEditorBeforeMount]);
+
   const debouncedSetFilesData = useMemo(() => {
     return debounce((fileId: string, val: string) => {
       setFilesData(prev => {
@@ -471,12 +479,6 @@ export default function App() {
 
   useEffect(() => {
     debouncedSetFilesData.flush();
-  }, [activeFile, debouncedSetFilesData]);
-
-  const handleEditorChange = useCallback((val: string | undefined) => {
-    if (val !== undefined && activeFile) {
-      debouncedSetFilesData(activeFile, val);
-    }
   }, [activeFile, debouncedSetFilesData]);
 
   const handleImportZip = () => {
@@ -1491,30 +1493,14 @@ int main(int argc, char** argv) {
                   </div>
                 )}
                 <div className={`absolute inset-0 ${(isVCDMode || isMarkdownMode || isSVMode) ? 'hidden' : 'block'}`}>
-                  <Editor
-                    height="100%"
-                    width="100%"
-                    theme={editorTheme}
-                    onMount={handleEditorDidMount}
-                    path={activeFile}
-                    language={
-                      ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :
-                      ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'tcl' :
-                      ['makefile', 'mak', 'mk', 'template'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').toLowerCase() === 'makefile' || (filesData[activeFile]?.name || '').toLowerCase().includes('makefile') ? 'makefile' :
-                      ['c', 'h'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'c' :
-                      ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'cpp' :
-                      ['ts', 'tsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'typescript' :
-                      ['js', 'jsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'javascript' :
-                      ['json'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'json' :
-                      ['md', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'markdown' :
-                      ['css'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'css' :
-                      ['html'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'html' :
-                      ['sh', 'bash'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'shell' : 'plaintext'
-                    }
-                    beforeMount={handleEditorBeforeMount}
-                    value={filesData[activeFile]?.content || ''}
-                    onChange={handleEditorChange}
-                    options={editorOptions}
+                  <CodeEditorWrapper
+                    activeFile={activeFile}
+                    filesData={filesData}
+                    editorTheme={editorTheme}
+                    handleEditorDidMount={handleEditorDidMount}
+                    handleEditorBeforeMount={handleEditorBeforeMount}
+                    editorOptions={editorOptions}
+                    debouncedSetFilesData={debouncedSetFilesData}
                   />
                 </div>
               </>
