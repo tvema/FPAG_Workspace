@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, Bot, User, Settings, Loader2, AlertCircle, Save, GitMerge } from 'lucide-react';
 import { parseVerilog } from '../utils/verilogParser';
+import debounce from 'lodash.debounce';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -143,6 +144,18 @@ function MessageContent({ content, onAddFile, onProposeMerge, onProposeMultiMerg
 }
 
 export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles, onProposeMultiMerge, chatMode, setChatMode }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any>, onProposeMultiMerge?: (files: Record<string, string>) => void, chatMode: 'file' | 'project', setChatMode: (mode: 'file' | 'project') => void }) {
+
+  const [localInput, setLocalInput] = useState(input);
+  const debouncedSetInput = useMemo(() => debounce((val: string) => setInput(val), 400), [setInput]);
+
+  useEffect(() => {
+    setLocalInput(input);
+  }, [input]);
+  
+  const handleInputChange = (val: string) => {
+    setLocalInput(val);
+    debouncedSetInput(val);
+  };
 
   const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>(() => {
     try {
@@ -299,9 +312,12 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
 
   const handleSend = async () => {
     const targetFileId = actualTargetId;
-    if (!targetFileId || !input.trim() || isLoading) return;
+    if (!targetFileId || !localInput.trim() || isLoading) return;
 
-    const userMessage = input.trim();
+    const userMessage = localInput.trim();
+    setLocalInput('');
+    debouncedSetInput(''); // clear parent state as well
+    debouncedSetInput.flush(); // make sure it's cleared immediately
     setInput('');
     setError(null, targetFileId);
     
@@ -619,16 +635,16 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
       <div className="p-4 bg-[#121214] border-t border-white/5 shrink-0">
         <div className="relative flex items-end gap-2 bg-[#1a1a1f] p-2 rounded-xl border border-white/10 focus-within:border-indigo-500/50 transition-colors">
           <textarea 
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            value={localInput}
+            onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask AI..."
             className="w-full bg-transparent resize-none text-[13px] text-slate-200 placeholder:text-slate-600 focus:outline-none min-h-[40px] max-h-32 py-2 px-2"
-            rows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 5) : 1}
+            rows={localInput.split('\n').length > 1 ? Math.min(localInput.split('\n').length, 5) : 1}
           />
           <button 
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={!localInput.trim() || isLoading}
             className="p-2 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:hover:bg-indigo-500 text-white rounded-lg transition-colors shrink-0 mb-0.5"
           >
             <Send className="w-4 h-4" />

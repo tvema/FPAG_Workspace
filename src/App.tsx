@@ -2,6 +2,7 @@ import { Link, Box, FolderPlus, FilePlus, Upload } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import JSZip from 'jszip';
 import Editor from '@monaco-editor/react';
+import debounce from 'lodash.debounce';
 
 import { useInterval } from './hooks/useInterval';
 import { useCustomDialogs } from './hooks/useCustomDialogs';
@@ -455,14 +456,28 @@ export default function App() {
     }
   }, []);
 
+  const debouncedSetFilesData = useMemo(() => {
+    return debounce((fileId: string, val: string) => {
+      setFilesData(prev => {
+        if (!prev[fileId]) return prev;
+        if (prev[fileId].content === val) return prev;
+        return {
+          ...prev,
+          [fileId]: { ...prev[fileId], content: val, is_modified: true }
+        };
+      });
+    }, 400);
+  }, []);
+
+  useEffect(() => {
+    debouncedSetFilesData.flush();
+  }, [activeFile, debouncedSetFilesData]);
+
   const handleEditorChange = useCallback((val: string | undefined) => {
     if (val !== undefined && activeFile) {
-      setFilesData(prev => ({
-        ...prev,
-        [activeFile]: { ...prev[activeFile], content: val, is_modified: true }
-      }));
+      debouncedSetFilesData(activeFile, val);
     }
-  }, [activeFile, setFilesData]);
+  }, [activeFile, debouncedSetFilesData]);
 
   const handleImportZip = () => {
     const input = document.createElement('input');
