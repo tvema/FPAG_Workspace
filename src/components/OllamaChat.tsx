@@ -163,6 +163,25 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
 
   const actualTargetId = chatMode === 'project' ? '_project_global' : activeFileId;
 
+  const [localInput, setLocalInput] = useState(input);
+  
+  const setInputRef = useRef(setInput);
+  useEffect(() => {
+    setInputRef.current = setInput;
+  }, [setInput]);
+
+  const debouncedSetInput = useMemo(() => debounce((val: string) => setInputRef.current(val), 400), []);
+
+  useEffect(() => {
+    setLocalInput(input);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actualTargetId]);
+  
+  const handleInputChange = (val: string) => {
+    setLocalInput(val);
+    debouncedSetInput(val);
+  };
+
   const messages = actualTargetId ? (messagesMap[actualTargetId] || []) : [];
   const isLoading = actualTargetId ? (loadingMap[actualTargetId] || false) : false;
   const error = actualTargetId ? (errorMap[actualTargetId] || null) : null;
@@ -300,9 +319,12 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
 
   const handleSend = async () => {
     const targetFileId = actualTargetId;
-    if (!targetFileId || !input.trim() || isLoading) return;
+    if (!targetFileId || !localInput.trim() || isLoading) return;
 
-    const userMessage = input.trim();
+    const userMessage = localInput.trim();
+    setLocalInput('');
+    debouncedSetInput(''); // clear parent state as well
+    debouncedSetInput.flush(); // make sure it's cleared immediately
     setInput('');
     setError(null, targetFileId);
     
@@ -620,16 +642,16 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
       <div className="p-4 bg-[#121214] border-t border-white/5 shrink-0">
         <div className="relative flex items-end gap-2 bg-[#1a1a1f] p-2 rounded-xl border border-white/10 focus-within:border-indigo-500/50 transition-colors">
           <textarea 
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            value={localInput}
+            onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask AI..."
             className="w-full bg-transparent resize-none text-[13px] text-slate-200 placeholder:text-slate-600 focus:outline-none min-h-[140px] max-h-64 py-2 px-2"
-            rows={Math.max(7, Math.min(input.split('\n').length, 15))}
+            rows={Math.max(7, Math.min(localInput.split('\n').length, 15))}
           />
           <button 
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={!localInput.trim() || isLoading}
             className="p-2 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:hover:bg-indigo-500 text-white rounded-lg transition-colors shrink-0 mb-0.5"
           >
             <Send className="w-4 h-4" />

@@ -97,8 +97,15 @@ export default function App() {
   const [projects, setProjects] = useState<{id: string, name: string}[]>([]);
 
   const [editorTheme, setEditorTheme] = useState<string>('zstate-dark');
-  const [showMinimap, setShowMinimap] = useState<boolean>(false);
-  const [highlightCursorWord, setHighlightCursorWord] = useState<boolean>(false);
+  const [showMinimap, setShowMinimap] = useState<boolean>(() => {
+    const saved = localStorage.getItem('showMinimap');
+    if (saved !== null) return saved === 'true';
+    return true;
+  });
+  useEffect(() => {
+    localStorage.setItem('showMinimap', showMinimap.toString());
+  }, [showMinimap]);
+  const [highlightCursorWord, setHighlightCursorWord] = useState<boolean>(true);
   const [lineJumpTarget, setLineJumpTarget] = useState<number | string | null>(null);
   const editorRef = React.useRef<any>(null);
   const monaco = useMonaco();
