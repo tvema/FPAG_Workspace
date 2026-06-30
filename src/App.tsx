@@ -421,8 +421,9 @@ export default function App() {
         'editorOverviewRuler.selectionHighlightForeground': '#ffaa00',
         'editorOverviewRuler.wordHighlightForeground': '#ffaa00',
         'editorOverviewRuler.wordHighlightStrongForeground': '#ffaa00',
-        'minimap.selectionHighlight': '#ffaa00',
-        'minimap.selectionOccurrenceHighlight': '#ffaa00'
+        'minimap.selectionHighlight': '#00ff00', 
+        'minimap.selectionOccurrenceHighlight': '#ffaa00',
+        'minimap.findMatchHighlight': '#ffaa00'
     };
 
     monaco.editor.defineTheme('zstate-dark', {

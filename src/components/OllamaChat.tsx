@@ -165,6 +165,14 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
 
   const [localInput, setLocalInput] = useState(input);
   
+  const prevInputRef = useRef(input);
+  useEffect(() => {
+    if (input !== prevInputRef.current) {
+      setLocalInput(input);
+    }
+    prevInputRef.current = input;
+  }, [input]);
+
   const setInputRef = useRef(setInput);
   useEffect(() => {
     setInputRef.current = setInput;
@@ -174,6 +182,7 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
 
   useEffect(() => {
     setLocalInput(input);
+    prevInputRef.current = input;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actualTargetId]);
   
