@@ -19,8 +19,18 @@ const CodeBlock = ({ lang, code, onAddFile, onProposeMerge }: { lang: string, co
                 <span>{lang || 'code'}</span>
                 {!isSaving ? (
                     <div className="flex gap-2">
-                        <button onClick={() => onProposeMerge(code)} className="flex items-center gap-1.5 hover:text-white transition-colors text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20">
-                            <GitMerge className="w-3.5 h-3.5" /> Merge with active
+                        <button onClick={() => {
+                            const sel = window.getSelection()?.toString();
+                            if (sel && sel.trim()) {
+                                onProposeMerge(sel);
+                            } else {
+                                alert("Please select some text in this block first");
+                            }
+                        }} className="flex items-center gap-1.5 hover:text-white transition-colors text-amber-300 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20 hover:bg-amber-500/20" title="Merge selected text">
+                            <GitMerge className="w-3.5 h-3.5" /> Merge Selected
+                        </button>
+                        <button onClick={() => onProposeMerge(code)} className="flex items-center gap-1.5 hover:text-white transition-colors text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20" title="Merge entire block">
+                            <GitMerge className="w-3.5 h-3.5" /> Merge Block
                         </button>
                         <button onClick={() => setIsSaving(true)} className="flex items-center gap-1.5 hover:text-white transition-colors text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded border border-indigo-500/20 hover:bg-indigo-500/20">
                             <Save className="w-3.5 h-3.5" /> Save New
@@ -75,9 +85,9 @@ function MessageContent({ content, onAddFile, onProposeMerge, onProposeMultiMerg
             // If we have file blocks, let's just strip them out of the regular rendering
             // and we'll render them separately.
             let strippedContent = content.replace(/<file\s+path="([^"]+)">\s*([\s\S]*?)\s*<\/file>/g, '\n[File block extracted]\n');
-            return strippedContent.split(/(```[\s\S]*?```)/g);
+            return strippedContent.split(/(```[^\n]*\n[\s\S]*?\n```)/g);
         }
-        return content.split(/(```[\s\S]*?```)/g);
+        return content.split(/(```[^\n]*\n[\s\S]*?\n```)/g);
     }, [content, multiFiles]);
     
     const handleMergeSelection = () => {
@@ -164,13 +174,13 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   const actualTargetId = chatMode === 'project' ? '_project_global' : activeFileId;
 
   const [localInput, setLocalInput] = useState(input);
+  const lastSentInputRef = useRef(input);
   
-  const prevInputRef = useRef(input);
   useEffect(() => {
-    if (input !== prevInputRef.current) {
+    if (input !== lastSentInputRef.current) {
       setLocalInput(input);
+      lastSentInputRef.current = input;
     }
-    prevInputRef.current = input;
   }, [input]);
 
   const setInputRef = useRef(setInput);
@@ -178,11 +188,14 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
     setInputRef.current = setInput;
   }, [setInput]);
 
-  const debouncedSetInput = useMemo(() => debounce((val: string) => setInputRef.current(val), 400), []);
+  const debouncedSetInput = useMemo(() => debounce((val: string) => {
+    lastSentInputRef.current = val;
+    setInputRef.current(val);
+  }, 400), []);
 
   useEffect(() => {
     setLocalInput(input);
-    prevInputRef.current = input;
+    lastSentInputRef.current = input;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actualTargetId]);
   
