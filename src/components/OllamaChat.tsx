@@ -102,24 +102,42 @@ const MessageContent = React.memo(function MessageContent({ content, onAddFile, 
 
             if (lang === 'markdown') {
                 let searchStart = firstLineEnd + 1;
-                let depth = 1;
                 while(true) {
-                    const nextOpen = text.indexOf('\n```', searchStart - 1);
-                    if (nextOpen === -1) break;
+                    const nextTick = text.indexOf('\n```', searchStart - 1);
+                    if (nextTick === -1) break;
                     
-                    const lineEnd = text.indexOf('\n', nextOpen + 1);
-                    const afterTicks = text.slice(nextOpen + 4, lineEnd === -1 ? undefined : lineEnd).trim();
+                    const lineEnd = text.indexOf('\n', nextTick + 1);
+                    const afterTicks = text.slice(nextTick + 4, lineEnd === -1 ? undefined : lineEnd).trim();
                     
-                    if (afterTicks === '') {
-                        depth--;
-                        if (depth === 0) {
-                            endIdx = nextOpen;
+                    if (afterTicks !== '') {
+                        // Opening an inner block with a language. Skip to its closing tag.
+                        const closingTick = text.indexOf('\n```', lineEnd === -1 ? text.length : lineEnd);
+                        if (closingTick === -1) {
+                            endIdx = nextTick;
                             break;
                         }
+                        const closingLineEnd = text.indexOf('\n', closingTick + 1);
+                        searchStart = closingLineEnd === -1 ? text.length : closingLineEnd + 1;
                     } else {
-                        depth++;
+                        // It has NO language. Look ahead.
+                        const lookaheadTick = text.indexOf('\n```', lineEnd === -1 ? text.length : lineEnd + 1);
+                        if (lookaheadTick === -1) {
+                            endIdx = nextTick;
+                            break;
+                        }
+                        
+                        const lookaheadLineEnd = text.indexOf('\n', lookaheadTick + 1);
+                        const lookaheadAfterTicks = text.slice(lookaheadTick + 4, lookaheadLineEnd === -1 ? undefined : lookaheadLineEnd).trim();
+                        
+                        if (lookaheadAfterTicks !== '') {
+                            // Lookahead has a language, so current tick MUST be closing the markdown block
+                            endIdx = nextTick;
+                            break;
+                        } else {
+                            // Pair them up as an inner block
+                            searchStart = lookaheadLineEnd === -1 ? text.length : lookaheadLineEnd + 1;
+                        }
                     }
-                    searchStart = lineEnd === -1 ? text.length : lineEnd + 1;
                 }
             }
             
@@ -160,6 +178,17 @@ const MessageContent = React.memo(function MessageContent({ content, onAddFile, 
     return (
         <div className="relative group text-[13px] leading-relaxed whitespace-pre-wrap w-full">
             <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 z-10 -mt-2">
+                {viewMode === 'raw' && (
+                    <button 
+                        onClick={() => {
+                            const sel = window.getSelection()?.toString();
+                            if (sel) onProposeMerge(sel);
+                        }} 
+                        className="bg-[#1e1e1e] border border-white/10 px-2 py-0.5 rounded text-[10px] hover:bg-white/10 text-slate-300 shadow-md"
+                    >
+                        Merge Selected
+                    </button>
+                )}
                 <button onClick={() => setViewMode(viewMode === 'raw' ? 'render' : 'raw')} className="bg-[#1e1e1e] border border-white/10 px-2 py-0.5 rounded text-[10px] hover:bg-white/10 text-slate-300 shadow-md">
                     {viewMode === 'raw' ? 'Render' : 'Raw Text'}
                 </button>
