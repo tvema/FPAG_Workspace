@@ -8,9 +8,10 @@ interface GitDiffModalProps {
   originalContent: string;
   filesData: Record<string, any>;
   activeFile: string;
+  editorTheme?: string;
 }
 
-export function GitDiffModal({ isOpen, onClose, originalContent, filesData, activeFile }: GitDiffModalProps) {
+export function GitDiffModal({ isOpen, onClose, originalContent, filesData, activeFile, editorTheme = 'zstate-dark' }: GitDiffModalProps) {
   const fileType = filesData[activeFile]?.type?.toLowerCase() || '';
   const fileName = (filesData[activeFile]?.name || '').toLowerCase();
   
@@ -62,7 +63,7 @@ export function GitDiffModal({ isOpen, onClose, originalContent, filesData, acti
                 original={originalContent}
                 modified={filesData[activeFile]?.content || ''}
                 language={language}
-                theme="vs-dark"
+                theme={editorTheme}
                 options={{
                   renderSideBySide: window.innerWidth > 768,
                   useInlineViewWhenSpaceIsLimited: true,

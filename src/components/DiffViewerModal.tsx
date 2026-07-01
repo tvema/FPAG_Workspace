@@ -8,9 +8,10 @@ interface DiffViewerModalProps {
   filesData: Record<string, any>;
   activeFile: string;
   handleAddFile: (path: string, content: string) => void;
+  editorTheme?: string;
 }
 
-export function DiffViewerModal({ proposedMergeCode, setProposedMergeCode, filesData, activeFile, handleAddFile }: DiffViewerModalProps) {
+export function DiffViewerModal({ proposedMergeCode, setProposedMergeCode, filesData, activeFile, handleAddFile, editorTheme = 'zstate-dark' }: DiffViewerModalProps) {
   const fileType = filesData[activeFile]?.type?.toLowerCase() || '';
   const fileName = (filesData[activeFile]?.name || '').toLowerCase();
   
@@ -64,7 +65,7 @@ export function DiffViewerModal({ proposedMergeCode, setProposedMergeCode, files
                 original={filesData[activeFile]?.content || ''}
                 modified={proposedMergeCode}
                 language={language}
-                theme="vs-dark"
+                theme={editorTheme}
                 options={{
                   renderSideBySide: window.innerWidth > 768,
                   useInlineViewWhenSpaceIsLimited: true,

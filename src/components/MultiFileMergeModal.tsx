@@ -8,9 +8,10 @@ interface MultiFileMergeModalProps {
   setProposedMultiMerge: (val: Record<string, string> | null) => void;
   filesData: Record<string, any>;
   handleAddFile: (path: string, content: string) => void;
+  editorTheme?: string;
 }
 
-export function MultiFileMergeModal({ proposedMultiMerge, setProposedMultiMerge, filesData, handleAddFile }: MultiFileMergeModalProps) {
+export function MultiFileMergeModal({ proposedMultiMerge, setProposedMultiMerge, filesData, handleAddFile, editorTheme = 'zstate-dark' }: MultiFileMergeModalProps) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [acceptedFiles, setAcceptedFiles] = useState<Set<string>>(new Set());
   const [rejectedFiles, setRejectedFiles] = useState<Set<string>>(new Set());
@@ -170,7 +171,7 @@ export function MultiFileMergeModal({ proposedMultiMerge, setProposedMultiMerge,
                             original={Object.values(filesData).find((f: any) => f.path === selectedFile)?.content || ''}
                             modified={proposedMultiMerge[selectedFile]}
                             language={getLanguage(selectedFile)}
-                            theme="vs-dark"
+                            theme={editorTheme}
                             options={{
                               renderSideBySide: window.innerWidth > 768,
                               useInlineViewWhenSpaceIsLimited: true,

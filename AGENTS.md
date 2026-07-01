@@ -41,3 +41,10 @@ It is specifically built for working with Verilog and Intel Quartus Prime files.
    - The chat input (`chatInputs`) in "Project Mode" is global and shared across all files (keyed by `_project_global`), ensuring context and prompts aren't lost when switching files.
    - The AI will output changes in `<file path="..."></file>` blocks.
    - The client parses these blocks and renders a `MultiFileMergeModal` to let the user review and batch-merge changes across multiple files simultaneously.
+
+# Editor Preferences
+11. **Monaco Editor Visual Settings**:
+   - MUST disable the default word highlighting on cursor (`occurrencesHighlight: "off"`) by default.
+   - Minimap selection highlight (`minimap.selectionHighlight` and inline minimap decorations) MUST be bright green (`#00ff00`).
+   - Text selection highlights (`editor.selectionHighlightBackground`, `editor.wordHighlightBackground`, etc.) MUST be bright yellow-orange (`#ffb800`).
+   - The editor theme (`zstate-dark`) must be passed properly to ALL Monaco editor instances (including diff modals) to prevent Monaco from globally resetting the theme to `vs-dark`.
