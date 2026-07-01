@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, Bot, User, Settings, Loader2, AlertCircle, Save, GitMerge } from 'lucide-react';
 import { parseVerilog } from '../utils/verilogParser';
@@ -19,18 +19,8 @@ const CodeBlock = ({ lang, code, onAddFile, onProposeMerge }: { lang: string, co
                 <span>{lang || 'code'}</span>
                 {!isSaving ? (
                     <div className="flex gap-2">
-                        <button onClick={() => {
-                            const sel = window.getSelection()?.toString();
-                            if (sel && sel.trim()) {
-                                onProposeMerge(sel);
-                            } else {
-                                alert("Please select some text in this block first");
-                            }
-                        }} className="flex items-center gap-1.5 hover:text-white transition-colors text-amber-300 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20 hover:bg-amber-500/20" title="Merge selected text">
-                            <GitMerge className="w-3.5 h-3.5" /> Merge Selected
-                        </button>
-                        <button onClick={() => onProposeMerge(code)} className="flex items-center gap-1.5 hover:text-white transition-colors text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20" title="Merge entire block">
-                            <GitMerge className="w-3.5 h-3.5" /> Merge Block
+                        <button onClick={() => onProposeMerge(code)} className="flex items-center gap-1.5 hover:text-white transition-colors text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 hover:bg-emerald-500/20" title="Merge this block">
+                            <GitMerge className="w-3.5 h-3.5" /> Merge with active
                         </button>
                         <button onClick={() => setIsSaving(true)} className="flex items-center gap-1.5 hover:text-white transition-colors text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded border border-indigo-500/20 hover:bg-indigo-500/20">
                             <Save className="w-3.5 h-3.5" /> Save New
@@ -62,7 +52,7 @@ const CodeBlock = ({ lang, code, onAddFile, onProposeMerge }: { lang: string, co
     );
 };
 
-function MessageContent({ content, onAddFile, onProposeMerge, onProposeMultiMerge }: { content: string, onAddFile: (path: string, content: string) => void, onProposeMerge: (code: string) => void, onProposeMultiMerge?: (files: Record<string, string>) => void }) {
+const MessageContent = React.memo(function MessageContent({ content, onAddFile, onProposeMerge, onProposeMultiMerge }: { content: string, onAddFile: (path: string, content: string) => void, onProposeMerge: (code: string) => void, onProposeMultiMerge?: (files: Record<string, string>) => void }) {
     const [viewMode, setViewMode] = useState<'render' | 'raw'>('render');
     
     // Check if there are any <file path="..."> blocks
@@ -79,32 +69,97 @@ function MessageContent({ content, onAddFile, onProposeMerge, onProposeMultiMerg
         return null;
     }, [content]);
 
-    // Simple parser for standard code blocks
     const parts = useMemo(() => {
+        let text = content;
         if (multiFiles) {
-            // If we have file blocks, let's just strip them out of the regular rendering
-            // and we'll render them separately.
-            let strippedContent = content.replace(/<file\s+path="([^"]+)">\s*([\s\S]*?)\s*<\/file>/g, '\n[File block extracted]\n');
-            return strippedContent.split(/(```[^\n]*\n[\s\S]*?\n```)/g);
+            text = text.replace(/<file\s+path="([^"]+)">\s*([\s\S]*?)\s*<\/file>/g, '\n[File block extracted]\n');
         }
-        return content.split(/(```[^\n]*\n[\s\S]*?\n```)/g);
+        
+        const result = [];
+        let currentIndex = 0;
+        
+        while (currentIndex < text.length) {
+            const startIdx = text.indexOf('```', currentIndex);
+            if (startIdx === -1) {
+                result.push(text.slice(currentIndex));
+                break;
+            }
+            
+            // Text before the block
+            if (startIdx > currentIndex) {
+                result.push(text.slice(currentIndex, startIdx));
+            }
+            
+            // Find the end of the line where ``` is
+            const firstLineEnd = text.indexOf('\n', startIdx);
+            if (firstLineEnd === -1) {
+                result.push(text.slice(startIdx));
+                break;
+            }
+            
+            const lang = text.slice(startIdx + 3, firstLineEnd).trim();
+            let endIdx = -1;
+
+            if (lang === 'markdown') {
+                let searchStart = firstLineEnd + 1;
+                let depth = 1;
+                while(true) {
+                    const nextOpen = text.indexOf('\n```', searchStart - 1);
+                    if (nextOpen === -1) break;
+                    
+                    const lineEnd = text.indexOf('\n', nextOpen + 1);
+                    const afterTicks = text.slice(nextOpen + 4, lineEnd === -1 ? undefined : lineEnd).trim();
+                    
+                    if (afterTicks === '') {
+                        depth--;
+                        if (depth === 0) {
+                            endIdx = nextOpen;
+                            break;
+                        }
+                    } else {
+                        depth++;
+                    }
+                    searchStart = lineEnd === -1 ? text.length : lineEnd + 1;
+                }
+            }
+            
+            if (endIdx === -1) {
+                // We are looking for the closing ``` on a new line
+                let searchStart = firstLineEnd + 1;
+                
+                while (true) {
+                    const possibleEnd = text.indexOf('\n```', searchStart - 1); // -1 to catch if it's right at the start
+                    if (possibleEnd === -1) {
+                        break;
+                    }
+                    
+                    // Check what's after ```
+                    const afterTicks = possibleEnd + 4;
+                    if (afterTicks >= text.length || text[afterTicks] === '\n' || text[afterTicks] === '\r') {
+                        endIdx = possibleEnd;
+                        break;
+                    } else {
+                        searchStart = afterTicks;
+                    }
+                }
+            }
+            
+            if (endIdx === -1) {
+                result.push(text.slice(startIdx));
+                break;
+            }
+            
+            let blockStr = text.slice(startIdx, endIdx + 4);
+            result.push(blockStr);
+            currentIndex = endIdx + 4;
+        }
+        
+        return result;
     }, [content, multiFiles]);
     
-    const handleMergeSelection = () => {
-        const text = window.getSelection()?.toString();
-        if (text && text.trim()) {
-            onProposeMerge(text);
-        } else {
-            alert("Please select some text first");
-        }
-    };
-
     return (
         <div className="relative group text-[13px] leading-relaxed whitespace-pre-wrap w-full">
             <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 z-10 -mt-2">
-                <button onClick={handleMergeSelection} title="Select text in this message to merge" className="bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 px-2 py-0.5 rounded text-[10px] border border-emerald-500/20 shadow-md">
-                    Merge Selected
-                </button>
                 <button onClick={() => setViewMode(viewMode === 'raw' ? 'render' : 'raw')} className="bg-[#1e1e1e] border border-white/10 px-2 py-0.5 rounded text-[10px] hover:bg-white/10 text-slate-300 shadow-md">
                     {viewMode === 'raw' ? 'Render' : 'Raw Text'}
                 </button>
@@ -151,6 +206,57 @@ function MessageContent({ content, onAddFile, onProposeMerge, onProposeMultiMerg
             )}
         </div>
     );
+}, (prev, next) => prev.content === next.content);
+
+function ChatInput({ input, setInput, onSend, isLoading }: { input: string, setInput: (v: string) => void, onSend: (val: string) => void, isLoading: boolean }) {
+    const [localInput, setLocalInput] = useState(input);
+    const lastExt = useRef(input);
+
+    useEffect(() => {
+        if (input !== lastExt.current) {
+            setLocalInput(input);
+            lastExt.current = input;
+        }
+    }, [input]);
+
+    const debouncedSetInput = useMemo(() => debounce((val: string) => {
+        lastExt.current = val;
+        setInput(val);
+    }, 400), [setInput]);
+
+    const handleInputChange = (val: string) => {
+        setLocalInput(val);
+        debouncedSetInput(val);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (localInput.trim() && !isLoading) {
+                onSend(localInput);
+            }
+        }
+    };
+
+    return (
+        <div className="relative flex items-end gap-2 bg-[#1a1a1f] p-2 rounded-xl border border-white/10 focus-within:border-indigo-500/50 transition-colors">
+          <textarea 
+            value={localInput}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask AI..."
+            className="w-full bg-transparent resize-none text-[13px] text-slate-200 placeholder:text-slate-600 focus:outline-none min-h-[140px] max-h-64 py-2 px-2"
+            rows={Math.max(7, Math.min(localInput.split('\n').length, 15))}
+          />
+          <button 
+            onClick={() => { if (localInput.trim() && !isLoading) onSend(localInput); }}
+            disabled={!localInput.trim() || isLoading}
+            className="p-2 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:hover:bg-indigo-500 text-white rounded-lg transition-colors shrink-0 mb-0.5"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </div>
+    );
 }
 
 export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles, onProposeMultiMerge, chatMode, setChatMode }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any>, onProposeMultiMerge?: (files: Record<string, string>) => void, chatMode: 'file' | 'project', setChatMode: (mode: 'file' | 'project') => void }) {
@@ -172,37 +278,6 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   const [errorMap, setErrorMap] = useState<Record<string, string | null>>({});
 
   const actualTargetId = chatMode === 'project' ? '_project_global' : activeFileId;
-
-  const [localInput, setLocalInput] = useState(input);
-  const lastSentInputRef = useRef(input);
-  
-  useEffect(() => {
-    if (input !== lastSentInputRef.current) {
-      setLocalInput(input);
-      lastSentInputRef.current = input;
-    }
-  }, [input]);
-
-  const setInputRef = useRef(setInput);
-  useEffect(() => {
-    setInputRef.current = setInput;
-  }, [setInput]);
-
-  const debouncedSetInput = useMemo(() => debounce((val: string) => {
-    lastSentInputRef.current = val;
-    setInputRef.current(val);
-  }, 400), []);
-
-  useEffect(() => {
-    setLocalInput(input);
-    lastSentInputRef.current = input;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actualTargetId]);
-  
-  const handleInputChange = (val: string) => {
-    setLocalInput(val);
-    debouncedSetInput(val);
-  };
 
   const messages = actualTargetId ? (messagesMap[actualTargetId] || []) : [];
   const isLoading = actualTargetId ? (loadingMap[actualTargetId] || false) : false;
@@ -339,14 +414,11 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
     }
   };
 
-  const handleSend = async () => {
+  const handleSend = async (text: string) => {
     const targetFileId = actualTargetId;
-    if (!targetFileId || !localInput.trim() || isLoading) return;
+    if (!targetFileId || !text.trim() || isLoading) return;
 
-    const userMessage = localInput.trim();
-    setLocalInput('');
-    debouncedSetInput(''); // clear parent state as well
-    debouncedSetInput.flush(); // make sure it's cleared immediately
+    const userMessage = text.trim();
     setInput('');
     setError(null, targetFileId);
     
@@ -511,13 +583,6 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
   return (
     <div className="flex flex-col h-full bg-[#16161a]">
       {/* Header */}
@@ -662,23 +727,7 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
 
       {/* Input */}
       <div className="p-4 bg-[#121214] border-t border-white/5 shrink-0">
-        <div className="relative flex items-end gap-2 bg-[#1a1a1f] p-2 rounded-xl border border-white/10 focus-within:border-indigo-500/50 transition-colors">
-          <textarea 
-            value={localInput}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask AI..."
-            className="w-full bg-transparent resize-none text-[13px] text-slate-200 placeholder:text-slate-600 focus:outline-none min-h-[140px] max-h-64 py-2 px-2"
-            rows={Math.max(7, Math.min(localInput.split('\n').length, 15))}
-          />
-          <button 
-            onClick={handleSend}
-            disabled={!localInput.trim() || isLoading}
-            className="p-2 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:hover:bg-indigo-500 text-white rounded-lg transition-colors shrink-0 mb-0.5"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
+        <ChatInput input={input} setInput={setInput} onSend={handleSend} isLoading={isLoading} />
         <div className="text-[10px] text-slate-500 text-center mt-2">
           Powered by Google Gemini.
         </div>

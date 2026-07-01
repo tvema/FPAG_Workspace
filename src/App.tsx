@@ -385,6 +385,26 @@ export default function App() {
   const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
     editorRef.current = editor;
 
+    let minimapSelectionDecorations: string[] = [];
+    editor.onDidChangeCursorSelection((e: any) => {
+        if (!e.selection.isEmpty()) {
+            minimapSelectionDecorations = editor.deltaDecorations(minimapSelectionDecorations, [
+                {
+                    range: new monaco.Range(e.selection.startLineNumber, 1, e.selection.endLineNumber, 1),
+                    options: {
+                        isWholeLine: true,
+                        minimap: {
+                            color: '#00ff00',
+                            position: monaco.editor.MinimapPosition.Inline
+                        }
+                    }
+                }
+            ]);
+        } else {
+            minimapSelectionDecorations = editor.deltaDecorations(minimapSelectionDecorations, []);
+        }
+    });
+
     editor.onMouseDown((e: any) => {
        if (e.event.ctrlKey || e.event.metaKey) {
            if (e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT) {
@@ -412,18 +432,18 @@ export default function App() {
 
   const handleEditorBeforeMount = useCallback((monaco: any) => {
     const sharedColors = {
-        'editor.selectionHighlightBackground': '#ffaa0060',
-        'editor.selectionHighlightBorder': '#ffaa00',
-        'editor.wordHighlightBackground': '#ffaa0060',
-        'editor.wordHighlightBorder': '#ffaa00',
-        'editor.wordHighlightStrongBackground': '#ffaa0080',
-        'editor.wordHighlightStrongBorder': '#ffaa00',
-        'editorOverviewRuler.selectionHighlightForeground': '#ffaa00',
-        'editorOverviewRuler.wordHighlightForeground': '#ffaa00',
-        'editorOverviewRuler.wordHighlightStrongForeground': '#ffaa00',
+        'editor.selectionHighlightBackground': '#ff660060',
+        'editor.selectionHighlightBorder': '#ff6600',
+        'editor.wordHighlightBackground': '#ff660060',
+        'editor.wordHighlightBorder': '#ff6600',
+        'editor.wordHighlightStrongBackground': '#ff660080',
+        'editor.wordHighlightStrongBorder': '#ff6600',
+        'editorOverviewRuler.selectionHighlightForeground': '#ff6600',
+        'editorOverviewRuler.wordHighlightForeground': '#ff6600',
+        'editorOverviewRuler.wordHighlightStrongForeground': '#ff6600',
         'minimap.selectionHighlight': '#00ff00', 
-        'minimap.selectionOccurrenceHighlight': '#ffaa00',
-        'minimap.findMatchHighlight': '#ffaa00'
+        'minimap.selectionOccurrenceHighlight': '#ff6600',
+        'minimap.findMatchHighlight': '#ff6600'
     };
 
     monaco.editor.defineTheme('zstate-dark', {
