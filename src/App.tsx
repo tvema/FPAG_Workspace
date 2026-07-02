@@ -21,6 +21,11 @@ import {
 import { OllamaChat } from "./components/OllamaChat";
 
 import { GitCommitDialog } from "./components/GitCommitDialog";
+import {
+  EditorSettingsModal,
+  EditorSettings,
+  defaultEditorSettings,
+} from "./components/EditorSettingsModal";
 import { MessageOverlay } from "./components/MessageOverlay";
 import { DiffViewerModal } from "./components/DiffViewerModal";
 import { MultiFileMergeModal } from "./components/MultiFileMergeModal";
@@ -150,16 +155,26 @@ export default function App() {
 
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
 
-  const [editorTheme, setEditorTheme] = useState<string>("zstate-dark");
-  const [showMinimap, setShowMinimap] = useState<boolean>(() => {
-    const saved = localStorage.getItem("showMinimap");
-    if (saved !== null) return saved === "true";
-    return true;
+  const [editorSettings, setEditorSettings] = useState<EditorSettings>(() => {
+    const saved = localStorage.getItem("editorSettings");
+    if (saved) {
+      try {
+        return { ...defaultEditorSettings, ...JSON.parse(saved) };
+      } catch (e) {}
+    }
+    return defaultEditorSettings;
   });
+
   useEffect(() => {
-    localStorage.setItem("showMinimap", showMinimap.toString());
-  }, [showMinimap]);
-  const [highlightCursorWord, setHighlightCursorWord] = useState<boolean>(false);
+    localStorage.setItem("editorSettings", JSON.stringify(editorSettings));
+  }, [editorSettings]);
+
+  const editorTheme = editorSettings.theme;
+  const showMinimap = editorSettings.minimap;
+  const highlightCursorWord = editorSettings.highlightCursorWord;
+
+  const [isEditorSettingsOpen, setIsEditorSettingsOpen] = useState(false);
+
   const [lineJumpTarget, setLineJumpTarget] = useState<number | string | null>(
     null,
   );
@@ -604,15 +619,28 @@ export default function App() {
 
   const editorOptions = useMemo(
     () => ({
-      minimap: { enabled: showMinimap },
-      fontSize: 13,
+      minimap: { enabled: editorSettings.minimap },
+      fontSize: editorSettings.fontSize,
+      tabSize: editorSettings.tabSize,
+      insertSpaces: editorSettings.insertSpaces,
+      useTabStops: editorSettings.useTabStops,
+      wordWrap: editorSettings.wordWrap,
+      lineNumbers: editorSettings.lineNumbers,
+      renderWhitespace: editorSettings.renderWhitespace,
+      cursorStyle: editorSettings.cursorStyle,
+      fontLigatures: editorSettings.fontLigatures,
+      formatOnPaste: editorSettings.formatOnPaste,
+      bracketPairColorization: {
+        enabled: editorSettings.bracketPairColorization,
+      },
       scrollBeyondLastLine: false,
-      wordWrap: "off" as const,
-      smoothScrolling: false,
-      occurrencesHighlight: highlightCursorWord ? "singleFile" : "off", // Highlight occurrences based on cursor position toggle
+      smoothScrolling: editorSettings.smoothScrolling,
+      occurrencesHighlight: editorSettings.highlightCursorWord
+        ? "singleFile"
+        : "off", // Highlight occurrences based on cursor position toggle
       selectionHighlight: true, // Highlight occurrences of selected text
     }),
-    [showMinimap, highlightCursorWord],
+    [editorSettings],
   );
 
   const handleEditorBeforeMount = useCallback((monaco: any) => {
@@ -1729,6 +1757,12 @@ int main(int argc, char** argv) {
   return (
     <div className="h-screen flex flex-col font-sans">
       <ResizeObserverErrorPatch />
+      <EditorSettingsModal
+        isOpen={isEditorSettingsOpen}
+        settings={editorSettings}
+        onChange={setEditorSettings}
+        onClose={() => setIsEditorSettingsOpen(false)}
+      />
       {/* Header */}
       <Header
         activeProject={activeProject}
@@ -1751,12 +1785,7 @@ int main(int argc, char** argv) {
         setGitCommitDialogState={setGitCommitDialogState}
         handleRunMake={handleRunMake}
         isBuildingLocal={isBuildingLocal}
-        editorTheme={editorTheme}
-        setEditorTheme={setEditorTheme}
-        showMinimap={showMinimap}
-        setShowMinimap={setShowMinimap}
-        highlightCursorWord={highlightCursorWord}
-        setHighlightCursorWord={setHighlightCursorWord}
+        onOpenEditorSettings={() => setIsEditorSettingsOpen(true)}
         handleEditTemplate={handleEditTemplate}
       />
 

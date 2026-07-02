@@ -62,6 +62,8 @@ export function ProjectTree({
   handleConfigureTestbench,
   chatMode
 }: ProjectTreeProps) {
+  const [mouseDownNode, setMouseDownNode] = React.useState<string | null>(null);
+
   const renderTree = (nodes: Record<string, TreeNode>, depth: number = 0) => {
     return Object.values(nodes)
       .sort((a, b) => {
@@ -82,7 +84,14 @@ export function ProjectTree({
                 className={`flex items-center justify-between text-sm text-slate-200 py-1.5 font-medium group pr-2 cursor-pointer hover:bg-white/5 rounded`}
                 style={{ paddingLeft: `${depth * 16}px` }}
               >
-                <div className="flex items-center gap-1.5" onClick={() => setCollapsedDirs(prev => ({ ...prev, [node.path]: !isCollapsed }))}>
+                <div 
+                  className="flex items-center gap-1.5" 
+                  onMouseDown={() => setMouseDownNode(node.path)}
+                  onClick={() => {
+                    if (mouseDownNode !== node.path) return;
+                    setCollapsedDirs(prev => ({ ...prev, [node.path]: !isCollapsed }));
+                  }}
+                >
                   {isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   {isTestbenchFolder ? <Box className="w-4 h-4 text-emerald-400 fill-emerald-400/20" /> : <FolderOpen className="w-4 h-4 text-amber-400" />}
                   <span className={isTestbenchFolder ? "text-emerald-300 font-semibold" : ""}>{node.name}</span>
@@ -203,7 +212,9 @@ export function ProjectTree({
         return (
           <div key={node.path}>
             <div 
+              onMouseDown={() => setMouseDownNode(node.path)}
               onClick={() => { 
+                 if (mouseDownNode !== node.path) return;
                  if (node.fileId) {
                     setActiveFile(node.fileId); 
                     setOpenedTabs(p => p.includes(node.fileId!) ? p : [...p, node.fileId!]);
@@ -222,8 +233,16 @@ export function ProjectTree({
               style={{ paddingLeft: `${pl}px` }}
             >
                <div className="flex items-center gap-1.5 text-[13px] overflow-hidden min-w-0">
-                 {hasChildren && (
-                    <div className="shrink-0" onClick={(e) => { e.stopPropagation(); setCollapsedDirs(prev => ({ ...prev, [node.path]: !isCollapsed })); }}>
+                  {hasChildren && (
+                    <div 
+                       className="shrink-0" 
+                       onMouseDown={(e) => { e.stopPropagation(); setMouseDownNode(node.path + '_chevron'); }}
+                       onClick={(e) => { 
+                          e.stopPropagation(); 
+                          if (mouseDownNode !== node.path + '_chevron') return;
+                          setCollapsedDirs(prev => ({ ...prev, [node.path]: !isCollapsed })); 
+                       }}
+                    >
                        {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
                     </div>
                  )}
