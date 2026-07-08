@@ -7,8 +7,7 @@ import React, {
   useRef,
 } from "react";
 import JSZip from "jszip";
-import { toPng } from 'html-to-image';
-import jsPDF from 'jspdf';
+import { useReactToPrint } from 'react-to-print';
 import Editor, { useMonaco } from "@monaco-editor/react";
 import { CodeEditorWrapper } from "./components/CodeEditorWrapper";
 import debounce from "lodash.debounce";
@@ -184,45 +183,32 @@ export default function App() {
   const monaco = useMonaco();
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  
+  const markdownPrintRef = useRef<HTMLDivElement>(null);
 
-  const handleExportPdf = async () => {
-    const element = document.getElementById('markdown-export-content');
-    if (!element) return;
-    
-    setIsExportingPdf(true);
-    
-    // Allow UI to update before blocking main thread
-    setTimeout(async () => {
-      try {
-        const dataUrl = await toPng(element, { backgroundColor: '#1e1e1e', pixelRatio: 2 });
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        
-        const imgProps = pdf.getImageProperties(dataUrl);
-        const imgWidth = pdfWidth - 20;
-        const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-        
-        let heightLeft = imgHeight;
-        let position = 10;
-        
-        pdf.addImage(dataUrl, 'PNG', 10, position, imgWidth, imgHeight);
-        heightLeft -= pdfHeight;
+  const performPrint = useReactToPrint({
+    contentRef: markdownPrintRef,
+    documentTitle: activeFile || 'document',
+    pageStyle: '@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }',
+    onBeforePrint: () => {
+      return new Promise((resolve) => {
+        setIsExportingPdf(true);
+        setTimeout(resolve, 50); // give UI time to update button state
+      });
+    },
+    onAfterPrint: () => {
+      setIsExportingPdf(false);
+    },
+    onPrintError: (errorLocation, err) => {
+      console.error('Failed to export PDF:', err);
+      setIsExportingPdf(false);
+    }
+  });
 
-        while (heightLeft >= 0) {
-          position = position - pdfHeight;
-          pdf.addPage();
-          pdf.addImage(dataUrl, 'PNG', 10, position, imgWidth, imgHeight);
-          heightLeft -= pdfHeight;
-        }
-
-        pdf.save('document.pdf');
-      } catch (err) {
-        console.error('Failed to export PDF:', err);
-      } finally {
-        setIsExportingPdf(false);
-      }
-    }, 50);
+  const handleExportPdf = () => {
+    if (performPrint) {
+      performPrint();
+    }
   };
 
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
@@ -2041,6 +2027,7 @@ int main(int argc, char** argv) {
                       {isMarkdownMode && (
                         <MarkdownWrapper
                           content={filesData[activeFile]?.content || ""}
+                          printRef={markdownPrintRef}
                         />
                       )}
                       {isSVMode && (
