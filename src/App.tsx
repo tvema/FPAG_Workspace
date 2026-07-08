@@ -189,7 +189,6 @@ export default function App() {
   const performPrint = useReactToPrint({
     contentRef: markdownPrintRef,
     documentTitle: activeFile || 'document',
-    pageStyle: '@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }',
     onBeforePrint: () => {
       return new Promise((resolve) => {
         setIsExportingPdf(true);
