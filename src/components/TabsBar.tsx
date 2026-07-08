@@ -1,6 +1,7 @@
-import React from 'react';
-import { FileCode2, X, MoreVertical, GitPullRequest, ArrowLeft } from 'lucide-react';
+import React, { useState } from 'react';
+import { FileCode2, X, MoreVertical, GitPullRequest, ArrowLeft, Download } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import html2pdf from 'html2pdf.js';
 
 interface TabsBarProps {
   openedTabs: string[];
@@ -19,6 +20,9 @@ interface TabsBarProps {
   fetchGitDiffForActiveFile: () => void;
   onBack?: () => void;
   canGoBack?: boolean;
+  onExportPdf?: () => void;
+  isExportingPdf?: boolean;
+  isMarkdownMode?: boolean;
 }
 
 export function TabsBar({
@@ -37,7 +41,10 @@ export function TabsBar({
   closeTab,
   fetchGitDiffForActiveFile,
   onBack,
-  canGoBack
+  canGoBack,
+  onExportPdf,
+  isExportingPdf,
+  isMarkdownMode
 }: TabsBarProps) {
   return (
     <div className="flex bg-[#121214] border-b border-black/50 shrink-0 justify-between items-center min-w-0">
@@ -107,6 +114,17 @@ export function TabsBar({
           >
             <GitPullRequest className="w-3.5 h-3.5" />
             View Git Diff
+          </button>
+        )}
+        {isMarkdownMode && onExportPdf && (
+          <button 
+            onClick={onExportPdf}
+            disabled={isExportingPdf}
+            className="text-xs flex items-center gap-2 text-slate-400 hover:text-white px-2 py-1 rounded bg-white/5 hover:bg-white/10 transition-colors shrink-0 whitespace-nowrap disabled:opacity-50"
+            title="Export to PDF"
+          >
+            <Download className="w-3.5 h-3.5" />
+            {isExportingPdf ? 'Exporting...' : 'Export PDF'}
           </button>
         )}
       </div>

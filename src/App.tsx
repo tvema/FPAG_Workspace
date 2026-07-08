@@ -7,6 +7,8 @@ import React, {
   useRef,
 } from "react";
 import JSZip from "jszip";
+import { toPng } from 'html-to-image';
+import jsPDF from 'jspdf';
 import Editor, { useMonaco } from "@monaco-editor/react";
 import { CodeEditorWrapper } from "./components/CodeEditorWrapper";
 import debounce from "lodash.debounce";
@@ -181,6 +183,48 @@ export default function App() {
   const editorRef = React.useRef<any>(null);
   const monaco = useMonaco();
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const handleExportPdf = async () => {
+    const element = document.getElementById('markdown-export-content');
+    if (!element) return;
+    
+    setIsExportingPdf(true);
+    
+    // Allow UI to update before blocking main thread
+    setTimeout(async () => {
+      try {
+        const dataUrl = await toPng(element, { backgroundColor: '#1e1e1e', pixelRatio: 2 });
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        
+        const imgProps = pdf.getImageProperties(dataUrl);
+        const imgWidth = pdfWidth - 20;
+        const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+        
+        let heightLeft = imgHeight;
+        let position = 10;
+        
+        pdf.addImage(dataUrl, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+
+        while (heightLeft >= 0) {
+          position = position - pdfHeight;
+          pdf.addPage();
+          pdf.addImage(dataUrl, 'PNG', 10, position, imgWidth, imgHeight);
+          heightLeft -= pdfHeight;
+        }
+
+        pdf.save('document.pdf');
+      } catch (err) {
+        console.error('Failed to export PDF:', err);
+      } finally {
+        setIsExportingPdf(false);
+      }
+    }, 50);
+  };
+
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
 
   const [testbenchDialog, setTestbenchDialog] = useState<{
@@ -1893,6 +1937,7 @@ int main(int argc, char** argv) {
                 <OllamaChat
                   onAddFile={handleAddFile}
                   activeFileId={activeFile}
+                  activeProjectId={activeProject}
                   activeFilePath={filesData[activeFile]?.path || null}
                   activeFileContent={filesData[activeFile]?.content || null}
                   projectContext={
@@ -1908,7 +1953,7 @@ int main(int argc, char** argv) {
                   setChatMode={setChatMode}
                   input={
                     chatMode === "project"
-                      ? chatInputs["_project_global"] || ""
+                      ? chatInputs[`_project_global_${activeProject || 'default'}`] || ""
                       : activeFile
                         ? chatInputs[activeFile] || ""
                         : ""
@@ -1916,7 +1961,7 @@ int main(int argc, char** argv) {
                   setInput={(val) => {
                     const aid =
                       chatMode === "project"
-                        ? "_project_global"
+                        ? `_project_global_${activeProject || 'default'}`
                         : activeFile || "_global";
                     setChatInputs((prev) => ({
                       ...prev,
@@ -1973,6 +2018,9 @@ int main(int argc, char** argv) {
                   fetchGitDiffForActiveFile={fetchGitDiffForActiveFile}
                   onBack={goBack}
                   canGoBack={navHistory.length > 0}
+                  onExportPdf={handleExportPdf}
+                  isExportingPdf={isExportingPdf}
+                  isMarkdownMode={isMarkdownMode}
                 />
                 <div className="flex-1 overflow-hidden relative">
                   {activeFile ? (

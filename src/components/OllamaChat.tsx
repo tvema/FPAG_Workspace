@@ -288,7 +288,7 @@ function ChatInput({ input, setInput, onSend, isLoading }: { input: string, setI
     );
 }
 
-export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles, onProposeMultiMerge, chatMode, setChatMode }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any>, onProposeMultiMerge?: (files: Record<string, string>) => void, chatMode: 'file' | 'project', setChatMode: (mode: 'file' | 'project') => void }) {
+export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles, onProposeMultiMerge, chatMode, setChatMode }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeProjectId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any>, onProposeMultiMerge?: (files: Record<string, string>) => void, chatMode: 'file' | 'project', setChatMode: (mode: 'file' | 'project') => void }) {
 
   const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>(() => {
     try {
@@ -306,7 +306,7 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
   const [errorMap, setErrorMap] = useState<Record<string, string | null>>({});
 
-  const actualTargetId = chatMode === 'project' ? '_project_global' : activeFileId;
+  const actualTargetId = chatMode === 'project' ? `_project_global_${activeProjectId || 'default'}` : activeFileId;
 
   const messages = actualTargetId ? (messagesMap[actualTargetId] || []) : [];
   const isLoading = actualTargetId ? (loadingMap[actualTargetId] || false) : false;
@@ -398,7 +398,7 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
   }, [messages, isLoading]);
 
   useEffect(() => {
-    if (actualTargetId && actualTargetId !== '_project_global') {
+    if (actualTargetId && chatMode !== 'project') {
       // Background fetch to update cache from server
       fetch(`/api/messages/${actualTargetId}`)
         .then(res => res.json())
@@ -420,18 +420,18 @@ export function OllamaChat({ onAddFile, activeFileId, activeFilePath, activeFile
         }
         return prev;
       });
-    } else if (actualTargetId === '_project_global') {
+    } else if (actualTargetId && chatMode === 'project') {
         setMessagesMap(prev => {
-            if (!prev['_project_global']) {
-              return { ...prev, ['_project_global']: [] };
+            if (!prev[actualTargetId]) {
+              return { ...prev, [actualTargetId]: [] };
             }
             return prev;
           });
     }
-  }, [actualTargetId]);
+  }, [actualTargetId, chatMode]);
 
   const saveMessage = async (role: string, content: string, fileId: string) => {
-    if (!fileId) return;
+    if (!fileId || chatMode === 'project') return;
     try {
       await fetch('/api/messages', {
         method: 'POST',

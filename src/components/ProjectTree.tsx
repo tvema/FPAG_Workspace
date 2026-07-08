@@ -284,7 +284,7 @@ export function ProjectTree({
                         <DropdownMenu.Item onClick={(e) => { 
                           e.stopPropagation(); 
                           setChatInputs((prev) => {
-                             const aid = chatMode === 'project' ? '_project_global' : (activeFile || '_global');
+                             const aid = chatMode === 'project' ? `_project_global_${activeProject || 'default'}` : (activeFile || '_global');
                              const current = prev[aid] || '';
                              return { ...prev, [aid]: current + (current.endsWith(' ') || current === '' ? '' : ' ') + `{${node.path}}` };
                           }); 
