@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { FileCode2, X, MoreVertical, GitPullRequest, ArrowLeft, Download } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import html2pdf from 'html2pdf.js';
 
 interface TabsBarProps {
   openedTabs: string[];

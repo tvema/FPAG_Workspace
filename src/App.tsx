@@ -45,6 +45,7 @@ import { Header } from "./components/Header";
 
 import { VerilogDiagramViewer } from "./components/VerilogDiagramViewer";
 import { VerilogASTViewer } from "./components/VerilogASTViewer";
+import { GdbDebuggerPanel } from "./components/GdbDebuggerPanel";
 
 const ResizeObserverErrorPatch = () => {
   useEffect(() => {
@@ -143,6 +144,8 @@ export default function App() {
   };
 
   const [isChatOpen, setIsChatOpen] = useState(true);
+  const [isGdbDebugOpen, setIsGdbDebugOpen] = useState(false);
+  const [breakpoints, setBreakpoints] = useState<Record<string, number[]>>({});
   const [chatMode, setChatMode] = useState<"file" | "project">("file");
   const [chatInputs, setChatInputs] = useState<Record<string, string>>({});
   const [proposedMergeCode, setProposedMergeCode] = useState<string | null>(
@@ -674,6 +677,7 @@ export default function App() {
         ? "singleFile"
         : "off", // Highlight occurrences based on cursor position toggle
       selectionHighlight: true, // Highlight occurrences of selected text
+      glyphMargin: true, // For debugging breakpoints
     }),
     [editorSettings],
   );
@@ -1810,6 +1814,8 @@ int main(int argc, char** argv) {
         saveAllFiles={saveAllFiles}
         isChatOpen={isChatOpen}
         setIsChatOpen={setIsChatOpen}
+        isDebugOpen={isGdbDebugOpen}
+        onToggleDebug={() => setIsGdbDebugOpen(!isGdbDebugOpen)}
         updateFileUI={updateFileUI}
         fileUIStates={fileUIStates}
         handleImportZip={handleImportZip}
@@ -1828,7 +1834,28 @@ int main(int argc, char** argv) {
       <div className="flex-1 w-full overflow-hidden">
         <PanelGroup orientation="horizontal" id="workspace-horizontal-v5">
           {/* Left Panel */}
-          {isChatOpen && isVCDMode && (
+          {isGdbDebugOpen ? (
+            <>
+              <Panel
+                key="gdb-panel"
+                id="gdb-debugger"
+                defaultSize={35}
+                minSize={15}
+                className="bg-[#18181b] z-20 flex flex-col"
+              >
+                <GdbDebuggerPanel
+                  fileId={activeFile}
+                  filePath={filesData[activeFile]?.path || ""}
+                  onClose={() => setIsGdbDebugOpen(false)}
+                  breakpoints={breakpoints}
+                  setBreakpoints={setBreakpoints}
+                />
+              </Panel>
+              <PanelResizeHandle
+                className="w-1 bg-[#27272a] hover:bg-emerald-500/50 transition-colors cursor-col-resize z-50 relative"
+              />
+            </>
+          ) : isChatOpen && isVCDMode ? (
             <>
               <Panel
                 key={`vcd-panel-${activeFile}`}
@@ -1874,9 +1901,7 @@ int main(int argc, char** argv) {
                 }}
               />
             </>
-          )}
-
-          {isChatOpen && isSVMode && (
+          ) : isChatOpen && isSVMode ? (
             <>
               <Panel
                 key="sv-panel"
@@ -1910,9 +1935,7 @@ int main(int argc, char** argv) {
                 }}
               />
             </>
-          )}
-
-          {isChatOpen && !isVCDMode && !isSVMode && (
+          ) : isChatOpen && !isVCDMode && !isSVMode ? (
             <>
               <Panel
                 key="chat-panel"
@@ -1977,7 +2000,7 @@ int main(int argc, char** argv) {
                 }}
               />
             </>
-          )}
+          ) : null}
 
           {/* Editor Area (Middle) */}
           <Panel
@@ -2123,6 +2146,8 @@ int main(int argc, char** argv) {
                           handleEditorBeforeMount={handleEditorBeforeMount}
                           editorOptions={editorOptions}
                           debouncedSetFilesData={debouncedSetFilesData}
+                          breakpoints={breakpoints}
+                          setBreakpoints={setBreakpoints}
                         />
                       </div>
                     </>

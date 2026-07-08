@@ -14,6 +14,7 @@ import {
   GitMerge,
   Settings2,
   CheckCircle2,
+  Bug,
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
@@ -31,6 +32,8 @@ interface HeaderProps {
   saveAllFiles: () => void;
   isChatOpen: boolean;
   setIsChatOpen: (v: boolean) => void;
+  isDebugOpen?: boolean;
+  onToggleDebug?: () => void;
   updateFileUI: (id: string, updater: (s: any) => any) => void;
   fileUIStates: Record<string, any>;
   handleImportZip: () => void;
@@ -60,6 +63,8 @@ export function Header({
   saveAllFiles,
   isChatOpen,
   setIsChatOpen,
+  isDebugOpen,
+  onToggleDebug,
   updateFileUI,
   fileUIStates,
   handleImportZip,
@@ -263,6 +268,19 @@ export function Header({
         >
           <Play className="w-3.5 h-3.5" />
           {isBuildingLocal ? "Building..." : "Run Make"}
+        </button>
+
+        <button
+          onClick={onToggleDebug}
+          className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer ${
+            isDebugOpen 
+              ? "bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20" 
+              : "bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20"
+          }`}
+          title="Toggle C/C++ Debugger"
+        >
+          <Bug className="w-3.5 h-3.5" />
+          {isDebugOpen ? "Stop Debug" : "Debug"}
         </button>
 
         <DropdownMenu.Root>

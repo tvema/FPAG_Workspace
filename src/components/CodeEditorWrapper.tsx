@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 
 interface CodeEditorWrapperProps {
@@ -9,6 +9,8 @@ interface CodeEditorWrapperProps {
   handleEditorBeforeMount: (monaco: any) => void;
   editorOptions: any;
   debouncedSetFilesData: (fileId: string, val: string) => void;
+  breakpoints?: Record<string, number[]>;
+  setBreakpoints?: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
 }
 
 export function CodeEditorWrapper({
@@ -18,10 +20,15 @@ export function CodeEditorWrapper({
   handleEditorDidMount,
   handleEditorBeforeMount,
   editorOptions,
-  debouncedSetFilesData
+  debouncedSetFilesData,
+  breakpoints,
+  setBreakpoints
 }: CodeEditorWrapperProps) {
   const fileContent = filesData[activeFile]?.content || '';
   const [localValue, setLocalValue] = useState(fileContent);
+  const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
+  const decorationsRef = useRef<string[]>([]);
 
   useEffect(() => {
     setLocalValue(fileContent);
@@ -34,12 +41,50 @@ export function CodeEditorWrapper({
     }
   }, [activeFile, debouncedSetFilesData]);
 
+  const handleMount = useCallback((editor: any, monaco: any) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+    handleEditorDidMount(editor, monaco);
+
+    editor.onMouseDown((e: any) => {
+      if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+        const line = e.target.position.lineNumber;
+        if (setBreakpoints && activeFile) {
+          setBreakpoints(prev => {
+            const current = prev[activeFile] || [];
+            const newBreakpoints = current.includes(line)
+              ? current.filter(l => l !== line)
+              : [...current, line];
+            return { ...prev, [activeFile]: newBreakpoints };
+          });
+        }
+      }
+    });
+  }, [handleEditorDidMount, activeFile, setBreakpoints]);
+
+  useEffect(() => {
+    if (editorRef.current && monacoRef.current && breakpoints && activeFile) {
+      const activeBreakpoints = breakpoints[activeFile] || [];
+      const newDecorations = activeBreakpoints.map(line => ({
+        range: new monacoRef.current.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: false,
+          glyphMarginClassName: 'bg-red-500 rounded-full w-3 h-3 ml-1 mt-1 cursor-pointer',
+        }
+      }));
+      decorationsRef.current = editorRef.current.deltaDecorations(
+        decorationsRef.current,
+        newDecorations
+      );
+    }
+  }, [breakpoints, activeFile]);
+
   return (
     <Editor
       height="100%"
       width="100%"
       theme={editorTheme}
-      onMount={handleEditorDidMount}
+      onMount={handleMount}
       path={activeFile}
       language={
         ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :

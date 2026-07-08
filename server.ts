@@ -580,9 +580,10 @@ async function startServer() {
         <html>
         <head>
           <meta charset="utf-8">
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
           <style>
             body {
-              font-family: Arial, sans-serif;
+              font-family: 'Inter', Arial, sans-serif;
               color: black;
               background-color: white;
               padding: 20px;
@@ -607,38 +608,45 @@ async function startServer() {
               color: #555;
               margin-left: 0;
             }
+            pre, pre div, pre code, pre code span {
+              white-space: pre-wrap !important;
+              word-wrap: break-word !important;
+              word-break: break-all !important;
+              font-family: "JetBrains Mono", Consolas, "Courier New", monospace !important;
+              font-size: 10px !important;
+              line-height: 1.3 !important;
+            }
             pre {
-              background-color: #f8f8f8;
-              border: 1px solid #ccc;
-              padding: 1rem;
-              white-space: pre-wrap;
-              word-wrap: break-word;
+              background-color: #f6f8fa !important; /* Light grey background */
+              color: #24292e !important;
+              border: 1px solid #e1e4e8;
+              padding: 12px;
               border-radius: 4px;
             }
             code {
-              font-family: monospace;
-              background-color: #f0f0f0;
+              font-family: "JetBrains Mono", Consolas, "Courier New", monospace !important;
+              background-color: #f3f4f6;
+              color: #24292e;
               padding: 0.2em 0.4em;
               border-radius: 3px;
-              font-size: 0.9em;
+              font-size: 10px !important;
             }
             pre code {
-              background-color: transparent;
+              background-color: transparent !important;
               padding: 0;
+              color: inherit !important;
             }
-            /* Highlight colors mapped to B&W text or basic grays */
-            span[style*="#569cd6"], span[style*="#c586c0"], span[style*="#4fc1ff"], span[style*="#dcdcaa"], span[style*="#9cdcfe"] {
-              font-weight: bold;
-              color: black !important;
-            }
-            span[style*="#ce9178"] {
-              font-style: italic;
-              color: #333 !important;
-            }
-            span[style*="#6a9955"] {
-              font-style: italic;
-              color: #666 !important;
-            }
+            /* Syntax highlighting color overrides for light PDF background */
+            span[style*="#569cd6" i], span[style*="86, 156, 214"] { color: #0000ff !important; } /* keywords */
+            span[style*="#c586c0" i], span[style*="197, 134, 192"] { color: #af00db !important; } /* control flow */
+            span[style*="#9cdcfe" i], span[style*="156, 220, 254"] { color: #001080 !important; font-weight: 500 !important; } /* variables */
+            span[style*="#dcdcaa" i], span[style*="220, 220, 170"] { color: #795e26 !important; font-weight: 500 !important; } /* functions */
+            span[style*="#ce9178" i], span[style*="206, 145, 120"] { color: #a31515 !important; } /* strings */
+            span[style*="#6a9955" i], span[style*="106, 153, 85"] { color: #008000 !important; } /* comments */
+            span[style*="#4ec9b0" i], span[style*="78, 201, 176"] { color: #267f99 !important; } /* types */
+            span[style*="#b5cea8" i], span[style*="181, 206, 168"] { color: #098658 !important; } /* numbers */
+            span[style*="#d4d4d4" i], span[style*="212, 212, 212"] { color: #24292e !important; } /* default text */
+            span[style*="#4fc1ff" i], span[style*="79, 193, 255"] { color: #0070c1 !important; } /* properties */
           </style>
         </head>
         <body>
@@ -647,7 +655,14 @@ async function startServer() {
         </html>
       `;
 
-      await page.setContent(styledHtml, { waitUntil: 'networkidle0' });
+      await page.setContent(styledHtml, { waitUntil: 'load' });
+      
+      // Wait for fonts to load
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
+      // Wait for network requests (like font downloads) to finish
+      await page.waitForNetworkIdle({ idleTime: 500, timeout: 5000 }).catch(() => {});
       
       const pdfBuffer = await page.pdf({
         format: 'A4',
@@ -757,8 +772,96 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+  });
+
+  const { WebSocketServer } = await import('ws');
+  const wss = new WebSocketServer({ server });
+  const { spawn } = await import('child_process');
+  
+  // GDB WebSocket handler
+  wss.on('connection', (ws) => {
+    let gdbProcess: import('child_process').ChildProcess | null = null;
+    
+    ws.on('message', async (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        
+        if (msg.type === 'start') {
+          const { projectId, breakpoints } = msg;
+          // Find project
+          const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
+          if (!project) {
+            ws.send(JSON.stringify({ type: 'error', data: 'Project not found' }));
+            return;
+          }
+          
+          const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+          const nodePath = await import('path');
+          const exportDir = nodePath.resolve(nodePath.join(process.cwd(), '.workspace_export'), sanitize(project.name));
+          
+          // First, compile the project
+          ws.send(JSON.stringify({ type: 'output', data: 'Compiling project...' }));
+          const { exec } = await import('child_process');
+          const { promisify } = await import('util');
+          const execAsync = promisify(exec);
+          
+          try {
+            await execAsync('make', { cwd: exportDir });
+            ws.send(JSON.stringify({ type: 'output', data: 'Compilation successful.\n' }));
+          } catch (err: any) {
+            ws.send(JSON.stringify({ type: 'output', data: 'Compilation failed:\n' + err.stdout + '\n' + err.stderr }));
+            return;
+          }
+          
+          // Start GDB process
+          gdbProcess = spawn('gdb', ['-q', './main'], { cwd: exportDir });
+          
+          gdbProcess.stdout?.on('data', (out) => {
+            ws.send(JSON.stringify({ type: 'output', data: out.toString() }));
+          });
+          
+          gdbProcess.stderr?.on('data', (errOut) => {
+            ws.send(JSON.stringify({ type: 'output', data: errOut.toString() }));
+          });
+          
+          gdbProcess.on('close', (code) => {
+            ws.send(JSON.stringify({ type: 'output', data: `GDB exited with code ${code}\n` }));
+            gdbProcess = null;
+          });
+          
+          // Set breakpoints
+          if (breakpoints) {
+            for (const file of Object.keys(breakpoints)) {
+              for (const line of breakpoints[file]) {
+                gdbProcess.stdin?.write(`break ${file}:${line}\n`);
+              }
+            }
+          }
+        } else if (msg.type === 'command') {
+          if (gdbProcess && gdbProcess.stdin) {
+            gdbProcess.stdin.write(msg.command + '\n');
+          } else {
+            ws.send(JSON.stringify({ type: 'output', data: 'GDB is not running.\n' }));
+          }
+        } else if (msg.type === 'stop') {
+          if (gdbProcess) {
+            gdbProcess.kill('SIGKILL');
+            gdbProcess = null;
+            ws.send(JSON.stringify({ type: 'output', data: 'GDB stopped.\n' }));
+          }
+        }
+      } catch (err) {
+        console.error('WS Error:', err);
+      }
+    });
+    
+    ws.on('close', () => {
+      if (gdbProcess) {
+        gdbProcess.kill('SIGKILL');
+      }
+    });
   });
 }
 
