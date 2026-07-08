@@ -4,10 +4,10 @@ import rehypeRaw from 'rehype-raw';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
-export function MarkdownWrapper({ content, printRef }: { content: string, printRef?: React.Ref<HTMLDivElement> }) {
+export function MarkdownWrapper({ content }: { content: string }) {
   return (
     <div className="w-full h-full overflow-auto bg-[#1e1e1e] relative">
-      <div ref={printRef} id="markdown-export-content" className="max-w-4xl mx-auto bg-[#1e1e1e] prose prose-invert prose-emerald prose-headings:text-slate-200 prose-p:text-slate-300 prose-a:text-emerald-400 prose-code:text-emerald-300 prose-pre:bg-[#0d0d12] prose-pre:border prose-pre:border-white/10 prose-strong:text-slate-200 p-8 pt-0">
+      <div id="markdown-export-content" className="max-w-4xl mx-auto bg-[#1e1e1e] prose prose-invert prose-emerald prose-headings:text-slate-200 prose-p:text-slate-300 prose-a:text-emerald-400 prose-code:text-emerald-300 prose-pre:bg-[#0d0d12] prose-pre:border prose-pre:border-white/10 prose-strong:text-slate-200 p-8 pt-0">
         <ReactMarkdown 
           remarkPlugins={[remarkGfm]} 
           rehypePlugins={[rehypeRaw]}

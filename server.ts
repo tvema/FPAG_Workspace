@@ -561,6 +561,111 @@ async function startServer() {
     }
   });
 
+  app.post('/api/export/pdf', async (req, res) => {
+    try {
+      const { html } = req.body;
+      if (!html) return res.status(400).json({ error: "Missing HTML content" });
+
+      const puppeteer = await import('puppeteer');
+      const browser = await puppeteer.launch({ 
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        headless: true
+      });
+      
+      const page = await browser.newPage();
+      
+      // Inject some basic styling to ensure it looks like a clean document
+      const styledHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              color: black;
+              background-color: white;
+              padding: 20px;
+              line-height: 1.5;
+              max-width: 1000px;
+              margin: 0 auto;
+            }
+            h1, h2, h3, h4, h5, h6 {
+              color: black;
+              margin-top: 1.5em;
+              margin-bottom: 0.5em;
+              font-weight: bold;
+            }
+            h1 { font-size: 2em; border-bottom: 1px solid #ccc; padding-bottom: 0.3em; }
+            h2 { font-size: 1.5em; border-bottom: 1px solid #eee; padding-bottom: 0.3em; }
+            p { margin-bottom: 1em; }
+            a { color: #000; text-decoration: underline; }
+            ul, ol { margin-bottom: 1em; padding-left: 2em; }
+            blockquote {
+              border-left: 4px solid #ccc;
+              padding-left: 1em;
+              color: #555;
+              margin-left: 0;
+            }
+            pre {
+              background-color: #f8f8f8;
+              border: 1px solid #ccc;
+              padding: 1rem;
+              white-space: pre-wrap;
+              word-wrap: break-word;
+              border-radius: 4px;
+            }
+            code {
+              font-family: monospace;
+              background-color: #f0f0f0;
+              padding: 0.2em 0.4em;
+              border-radius: 3px;
+              font-size: 0.9em;
+            }
+            pre code {
+              background-color: transparent;
+              padding: 0;
+            }
+            /* Highlight colors mapped to B&W text or basic grays */
+            span[style*="#569cd6"], span[style*="#c586c0"], span[style*="#4fc1ff"], span[style*="#dcdcaa"], span[style*="#9cdcfe"] {
+              font-weight: bold;
+              color: black !important;
+            }
+            span[style*="#ce9178"] {
+              font-style: italic;
+              color: #333 !important;
+            }
+            span[style*="#6a9955"] {
+              font-style: italic;
+              color: #666 !important;
+            }
+          </style>
+        </head>
+        <body>
+          ${html}
+        </body>
+        </html>
+      `;
+
+      await page.setContent(styledHtml, { waitUntil: 'networkidle0' });
+      
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' }
+      });
+
+      await browser.close();
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename=document.pdf');
+      res.send(Buffer.from(pdfBuffer));
+    } catch (err: any) {
+      console.error('PDF export error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Local Build Endpoint
   app.post('/api/build/local', async (req, res) => {
     try {

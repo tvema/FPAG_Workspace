@@ -7,7 +7,6 @@ import React, {
   useRef,
 } from "react";
 import JSZip from "jszip";
-import { useReactToPrint } from 'react-to-print';
 import Editor, { useMonaco } from "@monaco-editor/react";
 import { CodeEditorWrapper } from "./components/CodeEditorWrapper";
 import debounce from "lodash.debounce";
@@ -184,29 +183,36 @@ export default function App() {
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   
-  const markdownPrintRef = useRef<HTMLDivElement>(null);
-
-  const performPrint = useReactToPrint({
-    contentRef: markdownPrintRef,
-    documentTitle: activeFile || 'document',
-    onBeforePrint: () => {
-      return new Promise((resolve) => {
-        setIsExportingPdf(true);
-        setTimeout(resolve, 50); // give UI time to update button state
+  const handleExportPdf = async () => {
+    const element = document.getElementById('markdown-export-content');
+    if (!element) return;
+    
+    setIsExportingPdf(true);
+    try {
+      const response = await fetch('/api/export/pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ html: element.innerHTML })
       });
-    },
-    onAfterPrint: () => {
-      setIsExportingPdf(false);
-    },
-    onPrintError: (errorLocation, err) => {
+      
+      if (!response.ok) throw new Error(await response.text());
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = activeFile ? activeFile.split('/').pop()?.replace('.md', '.pdf') || 'document.pdf' : 'document.pdf';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
       console.error('Failed to export PDF:', err);
+      alert('Failed to export PDF: ' + err);
+    } finally {
       setIsExportingPdf(false);
-    }
-  });
-
-  const handleExportPdf = () => {
-    if (performPrint) {
-      performPrint();
     }
   };
 
@@ -2026,7 +2032,6 @@ int main(int argc, char** argv) {
                       {isMarkdownMode && (
                         <MarkdownWrapper
                           content={filesData[activeFile]?.content || ""}
-                          printRef={markdownPrintRef}
                         />
                       )}
                       {isSVMode && (
