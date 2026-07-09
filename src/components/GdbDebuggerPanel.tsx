@@ -21,6 +21,7 @@ export function GdbDebuggerPanel({
   onClose,
   breakpoints,
   setBreakpoints,
+  onNavigate,
 }: {
   fileId: string;
   filePath: string;
@@ -29,6 +30,7 @@ export function GdbDebuggerPanel({
   onClose: () => void;
   breakpoints?: Record<string, number[]>;
   setBreakpoints?: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
+  onNavigate?: (fileId: string, line: number) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"variables" | "callstack" | "breakpoints">("variables");
   const [isConsoleOpen, setIsConsoleOpen] = useState(true);
@@ -39,6 +41,45 @@ export function GdbDebuggerPanel({
 
   const [variables, setVariables] = useState<Array<{ name: string, value: string, type: string, expanded: boolean }>>([]);
   const [callstack, setCallstack] = useState<Array<{ id: number, frame: string, file: string, line: number, active: boolean }>>([]);
+  const [disabledBreakpoints, setDisabledBreakpoints] = useState<Set<string>>(new Set());
+
+  // Keep track of which breakpoints we have actually sent to GDB
+  const activeGdbBreakpointsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    
+    // Sync breakpoints dynamically
+    Object.entries(breakpoints || {}).forEach(([fid, lines]) => {
+      const p = (filesData && filesData[fid]) ? filesData[fid].path : fid;
+      lines.forEach(line => {
+        const bpId = `${fid}-${line}`;
+        const shouldBeActive = !disabledBreakpoints.has(bpId);
+        const isActiveInGdb = activeGdbBreakpointsRef.current.has(bpId);
+
+        if (shouldBeActive && !isActiveInGdb) {
+          wsRef.current?.send(JSON.stringify({ type: 'command', command: `-break-insert ${p}:${line}` }));
+          activeGdbBreakpointsRef.current.add(bpId);
+        } else if (!shouldBeActive && isActiveInGdb) {
+          // Clear it in GDB (GDB CLI command 'clear file:line' can be used as MI command via -interpreter-exec console "clear file:line")
+          wsRef.current?.send(JSON.stringify({ type: 'command', command: `-interpreter-exec console "clear ${p}:${line}"` }));
+          activeGdbBreakpointsRef.current.delete(bpId);
+        }
+      });
+    });
+
+    // Handle deleted breakpoints from the editor
+    activeGdbBreakpointsRef.current.forEach(bpId => {
+      const [fid, lineStr] = bpId.split('-');
+      const line = parseInt(lineStr, 10);
+      if (!breakpoints?.[fid]?.includes(line)) {
+        // Was removed from editor
+        const p = (filesData && filesData[fid]) ? filesData[fid].path : fid;
+        wsRef.current?.send(JSON.stringify({ type: 'command', command: `-interpreter-exec console "clear ${p}:${line}"` }));
+        activeGdbBreakpointsRef.current.delete(bpId);
+      }
+    });
+  }, [breakpoints, disabledBreakpoints, filesData]);
 
   useEffect(() => {
     // Scroll to bottom when output changes
@@ -74,16 +115,32 @@ export function GdbDebuggerPanel({
     const frames: any[] = [];
     const regex = /frame={level="([^"]+)",addr="([^"]+)",func="([^"]+)",(?:args=\[.*?\],)?(?:file="([^"]+)",fullname="[^"]+",line="([^"]+)"|.*?)}/g;
     let match;
+    let topFrameFile = "";
+    let topFrameLine = 0;
     while ((match = regex.exec(line)) !== null) {
+      const level = match[1];
+      const fileRaw = match[4] || "";
+      const lineNum = parseInt(match[5] || "0");
       frames.push({
-        id: parseInt(match[1]),
-        frame: `#${match[1]} ${match[3]} at ${match[2]}`,
-        file: match[4] || "",
-        line: parseInt(match[5] || "0"),
-        active: match[1] === "0"
+        id: parseInt(level),
+        frame: `#${level} ${match[3]} at ${match[2]}`,
+        file: fileRaw,
+        line: lineNum,
+        active: level === "0"
       });
+      if (level === "0" && fileRaw && lineNum > 0) {
+        topFrameFile = fileRaw;
+        topFrameLine = lineNum;
+      }
     }
-    if (frames.length > 0) setCallstack(frames);
+    if (frames.length > 0) {
+      setCallstack(frames);
+      if (topFrameFile && onNavigate && filesData) {
+        // Find matching fileId
+        const fileId = Object.keys(filesData).find(fid => filesData[fid].path.endsWith(topFrameFile)) || topFrameFile;
+        onNavigate(fileId, topFrameLine);
+      }
+    }
   };
 
   const startGdb = () => {
@@ -101,9 +158,15 @@ export function GdbDebuggerPanel({
       setConsoleOutput(["Connected to GDB backend. Starting session..."]);
       
       const mappedBreakpoints: Record<string, number[]> = {};
-      actualBreakpoints.forEach(bp => {
-        if (!mappedBreakpoints[bp.file]) mappedBreakpoints[bp.file] = [];
-        mappedBreakpoints[bp.file].push(bp.line);
+      Object.entries(breakpoints || {}).forEach(([fid, lines]) => {
+        const p = (filesData && filesData[fid]) ? filesData[fid].path : fid;
+        lines.forEach(line => {
+          const bpId = `${fid}-${line}`;
+          if (!disabledBreakpoints.has(bpId)) {
+            if (!mappedBreakpoints[p]) mappedBreakpoints[p] = [];
+            mappedBreakpoints[p].push(line);
+          }
+        });
       });
 
       ws.send(JSON.stringify({
@@ -111,6 +174,12 @@ export function GdbDebuggerPanel({
         projectId: projectId || 'default',
         breakpoints: mappedBreakpoints
       }));
+      // Auto run after a brief delay to let breakpoints set
+      setTimeout(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          sendCommand("-exec-run");
+        }
+      }, 500);
     };
 
     ws.onmessage = (event) => {
@@ -170,13 +239,16 @@ export function GdbDebuggerPanel({
 
   const actualBreakpoints = Object.entries(breakpoints || {}).flatMap(([fid, lines]) => {
     const p = (filesData && filesData[fid]) ? filesData[fid].path : fid;
-    return lines.map((line, idx) => ({
-      id: `${fid}-${line}`,
-      fileId: fid,
-      file: p,
-      line,
-      enabled: true
-    }));
+    return lines.map((line, idx) => {
+      const bpId = `${fid}-${line}`;
+      return {
+        id: bpId,
+        fileId: fid,
+        file: p,
+        line,
+        enabled: !disabledBreakpoints.has(bpId)
+      };
+    });
   });
 
   return (
@@ -273,6 +345,12 @@ export function GdbDebuggerPanel({
               ) : callstack.map((frame, i) => (
                 <div
                   key={i}
+                  onClick={() => {
+                    if (frame.file && onNavigate && filesData) {
+                      const fileId = Object.keys(filesData).find(fid => filesData[fid].path.endsWith(frame.file)) || frame.file;
+                      onNavigate(fileId, frame.line);
+                    }
+                  }}
                   className={`flex flex-col py-1 px-2 rounded cursor-pointer ${
                     frame.active ? "bg-emerald-500/10 border-l-2 border-emerald-500" : "hover:bg-white/5 border-l-2 border-transparent"
                   }`}
@@ -295,8 +373,18 @@ export function GdbDebuggerPanel({
                   <input
                     type="checkbox"
                     checked={bp.enabled}
-                    readOnly
-                    className="w-3 h-3 rounded-sm bg-white/10 border-white/20 text-emerald-500 focus:ring-emerald-500/50"
+                    onChange={(e) => {
+                      setDisabledBreakpoints(prev => {
+                        const next = new Set(prev);
+                        if (e.target.checked) {
+                          next.delete(bp.id);
+                        } else {
+                          next.add(bp.id);
+                        }
+                        return next;
+                      });
+                    }}
+                    className="w-3 h-3 rounded-sm bg-white/10 border-white/20 text-emerald-500 focus:ring-emerald-500/50 cursor-pointer"
                   />
                   <div className="flex flex-col">
                     <div className="text-xs text-slate-300">{bp.file}</div>

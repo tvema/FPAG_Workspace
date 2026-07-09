@@ -1851,6 +1851,12 @@ int main(int argc, char** argv) {
                   onClose={() => setIsGdbDebugOpen(false)}
                   breakpoints={breakpoints}
                   setBreakpoints={setBreakpoints}
+                  onNavigate={(fileId, line) => {
+                    setActiveFile(fileId);
+                    setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent('editor-goto-line', { detail: { fileId, line } }));
+                    }, 50);
+                  }}
                 />
               </Panel>
               <PanelResizeHandle

@@ -85,6 +85,18 @@ export function CodeEditorWrapper({
     }
   }, [breakpoints, activeFile]);
 
+  useEffect(() => {
+    const handleGotoLine = (e: any) => {
+      if (e.detail && e.detail.fileId === activeFile && editorRef.current) {
+        editorRef.current.revealLineInCenter(e.detail.line);
+        editorRef.current.setPosition({ lineNumber: e.detail.line, column: 1 });
+        editorRef.current.focus();
+      }
+    };
+    window.addEventListener('editor-goto-line', handleGotoLine);
+    return () => window.removeEventListener('editor-goto-line', handleGotoLine);
+  }, [activeFile]);
+
   return (
     <Editor
       height="100%"
