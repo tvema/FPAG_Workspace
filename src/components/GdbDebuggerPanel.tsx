@@ -420,11 +420,12 @@ export function GdbDebuggerPanel({
               {actualBreakpoints.length === 0 ? (
                 <div className="text-xs text-slate-500 p-2">No breakpoints set. Click the editor gutter to set breakpoints.</div>
               ) : actualBreakpoints.map((bp) => (
-                <div key={bp.id} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-white/5">
+                <div key={bp.id} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-white/5 cursor-pointer" onClick={() => onNavigate && onNavigate(bp.fileId, bp.line)}>
                   <input
                     type="checkbox"
                     checked={bp.enabled}
                     onChange={(e) => {
+                      e.stopPropagation();
                       setDisabledBreakpoints(prev => {
                         const next = new Set(prev);
                         if (e.target.checked) {

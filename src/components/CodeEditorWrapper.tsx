@@ -13,6 +13,16 @@ interface CodeEditorWrapperProps {
   setBreakpoints?: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
 }
 
+const LOCAL_STORAGE_KEY = 'monaco_view_states_v1';
+const editorViewStates: Record<string, any> = (() => {
+  try {
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : {};
+  } catch (e) {
+    return {};
+  }
+})();
+
 export function CodeEditorWrapper({
   activeFile,
   filesData,
@@ -30,6 +40,34 @@ export function CodeEditorWrapper({
   const monacoRef = useRef<any>(null);
   const decorationsRef = useRef<string[]>([]);
 
+  // Save view state when activeFile changes
+  const activeFileRef = useRef(activeFile);
+  useEffect(() => {
+    if (editorRef.current && activeFileRef.current) {
+      editorViewStates[activeFileRef.current] = editorRef.current.saveViewState();
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(editorViewStates));
+      } catch (e) {
+        // ignore quota errors
+      }
+    }
+    activeFileRef.current = activeFile;
+    if (editorRef.current && editorViewStates[activeFile]) {
+      editorRef.current.restoreViewState(editorViewStates[activeFile]);
+    }
+    
+    return () => {
+      if (editorRef.current && activeFileRef.current) {
+        editorViewStates[activeFileRef.current] = editorRef.current.saveViewState();
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(editorViewStates));
+        } catch (e) {
+          // ignore quota errors
+        }
+      }
+    };
+  }, [activeFile]);
+
   useEffect(() => {
     setLocalValue(fileContent);
   }, [activeFile, fileContent]);
@@ -41,15 +79,48 @@ export function CodeEditorWrapper({
     }
   }, [activeFile, debouncedSetFilesData]);
 
-  const activeFileRef = useRef(activeFile);
+  const updateBreakpoints = useCallback(() => {
+    if (editorRef.current && monacoRef.current && breakpoints && activeFile) {
+      const activeBreakpoints = breakpoints[activeFile] || [];
+      const newDecorations = activeBreakpoints.map(line => ({
+        range: new monacoRef.current.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: false,
+          glyphMarginClassName: 'bg-red-500 rounded-full w-3 h-3 ml-1 mt-1 cursor-pointer',
+        }
+      }));
+      decorationsRef.current = editorRef.current.deltaDecorations(
+        decorationsRef.current,
+        newDecorations
+      );
+    }
+  }, [breakpoints, activeFile]);
+
   useEffect(() => {
-    activeFileRef.current = activeFile;
-  }, [activeFile]);
+    updateBreakpoints();
+  }, [updateBreakpoints]);
 
   const handleMount = useCallback((editor: any, monaco: any) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
     handleEditorDidMount(editor, monaco);
+
+    if (activeFileRef.current && editorViewStates[activeFileRef.current]) {
+      editor.restoreViewState(editorViewStates[activeFileRef.current]);
+    }
+
+    // Apply breakpoints immediately on mount
+    if (breakpoints && activeFileRef.current) {
+      const activeBreakpoints = breakpoints[activeFileRef.current] || [];
+      const newDecorations = activeBreakpoints.map((line: number) => ({
+        range: new monaco.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: false,
+          glyphMarginClassName: 'bg-red-500 rounded-full w-3 h-3 ml-1 mt-1 cursor-pointer',
+        }
+      }));
+      decorationsRef.current = editor.deltaDecorations([], newDecorations);
+    }
 
     editor.onMouseDown((e: any) => {
       if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
@@ -67,23 +138,6 @@ export function CodeEditorWrapper({
       }
     });
   }, [handleEditorDidMount, setBreakpoints]);
-
-  useEffect(() => {
-    if (editorRef.current && monacoRef.current && breakpoints && activeFile) {
-      const activeBreakpoints = breakpoints[activeFile] || [];
-      const newDecorations = activeBreakpoints.map(line => ({
-        range: new monacoRef.current.Range(line, 1, line, 1),
-        options: {
-          isWholeLine: false,
-          glyphMarginClassName: 'bg-red-500 rounded-full w-3 h-3 ml-1 mt-1 cursor-pointer',
-        }
-      }));
-      decorationsRef.current = editorRef.current.deltaDecorations(
-        decorationsRef.current,
-        newDecorations
-      );
-    }
-  }, [breakpoints, activeFile]);
 
   useEffect(() => {
     const handleGotoLine = (e: any) => {
