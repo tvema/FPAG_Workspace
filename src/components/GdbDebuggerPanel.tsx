@@ -32,8 +32,22 @@ export function GdbDebuggerPanel({
   setBreakpoints?: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
   onNavigate?: (fileId: string, line: number) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"variables" | "callstack" | "breakpoints">("variables");
-  const [isConsoleOpen, setIsConsoleOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState<"variables" | "callstack" | "breakpoints">(() => {
+    const cached = localStorage.getItem("gdb_panel_active_tab");
+    return (cached as any) || "variables";
+  });
+  const [isConsoleOpen, setIsConsoleOpen] = useState(() => {
+    const cached = localStorage.getItem("gdb_panel_console_open");
+    return cached ? JSON.parse(cached) : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("gdb_panel_active_tab", activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    localStorage.setItem("gdb_panel_console_open", JSON.stringify(isConsoleOpen));
+  }, [isConsoleOpen]);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [commandInput, setCommandInput] = useState("");
   const [programState, setProgramState] = useState<"none" | "running" | "stopped" | "exited">("none");
@@ -88,6 +102,8 @@ export function GdbDebuggerPanel({
       consoleEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [consoleOutput]);
+
+  const autoRunRef = useRef(false);
 
   const parseMIString = (str: string) => {
     try {
@@ -167,6 +183,7 @@ export function GdbDebuggerPanel({
     setVariables([]);
     setCallstack([]);
     setProgramState("none");
+    autoRunRef.current = false;
 
     ws.onopen = () => {
       setConsoleOutput(["Connected to GDB backend. Starting session..."]);
@@ -188,13 +205,6 @@ export function GdbDebuggerPanel({
         projectId: projectId || 'default',
         breakpoints: mappedBreakpoints
       }));
-      // Auto run after a brief delay to let breakpoints set
-      setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          sendCommand("-exec-run");
-          setProgramState("running");
-        }
-      }, 500);
     };
 
     ws.onmessage = (event) => {
@@ -203,6 +213,13 @@ export function GdbDebuggerPanel({
         const lines = msg.data.split('\n');
         for (const line of lines) {
           if (!line.trim()) continue;
+          
+          if (line.trim() === '(gdb)' && !autoRunRef.current) {
+            autoRunRef.current = true;
+            sendCommand("-exec-run");
+            setProgramState("running");
+          }
+
           if (line.startsWith('~') || line.startsWith('@') || line.startsWith('&')) {
             setConsoleOutput(prev => [...prev, parseMIString(line.substring(1))]);
           } else if (line.startsWith('*stopped')) {

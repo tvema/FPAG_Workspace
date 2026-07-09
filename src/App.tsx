@@ -250,6 +250,7 @@ export default function App() {
   const [gitCommitDialogState, setGitCommitDialogState] = useState(false);
   const [gitMessageOpen, setGitMessageOpen] = useState(false);
   const [gitMessageContent, setGitMessageContent] = useState<any>(null);
+  const [isProjectLoaded, setIsProjectLoaded] = useState(false);
 
   const [gitDiffModalState, setGitDiffModalState] = useState<{
     isOpen: boolean;
@@ -1038,15 +1039,28 @@ export default function App() {
       .then((data) => {
         if (data && data.length > 0) {
           setProjects(data);
-          setActiveProject(data[0].id);
+          const lastActive = localStorage.getItem("last_active_project");
+          if (lastActive && data.some((p: any) => p.id === lastActive)) {
+            setActiveProject(lastActive);
+          } else {
+            setActiveProject(data[0].id);
+          }
         }
       })
       .catch(console.error);
   }, []);
 
+  // Save active project
+  useEffect(() => {
+    if (activeProject) {
+      localStorage.setItem("last_active_project", activeProject);
+    }
+  }, [activeProject]);
+
   // Load files when active project changes
   useEffect(() => {
     if (!activeProject) return;
+    setIsProjectLoaded(false);
 
     fetch(`/api/projects/${activeProject}/files`)
       .then((res) => res.json())
@@ -1107,6 +1121,12 @@ export default function App() {
                 if (config.diagramHistory)
                   setDiagramHistory(config.diagramHistory);
                 if (config.chatWidth) setChatWidth(config.chatWidth);
+                if (config.isGdbDebugOpen !== undefined)
+                  setIsGdbDebugOpen(config.isGdbDebugOpen);
+                if (config.breakpoints)
+                  setBreakpoints(config.breakpoints);
+                if (config.chatMode) setChatMode(config.chatMode);
+                if (config.chatInputs) setChatInputs(config.chatInputs);
                 stateRestored = true;
               }
             }
@@ -1163,6 +1183,12 @@ export default function App() {
                   if (config.diagramHistory)
                     setDiagramHistory(config.diagramHistory);
                   if (config.chatWidth) setChatWidth(config.chatWidth);
+                  if (config.isGdbDebugOpen !== undefined)
+                    setIsGdbDebugOpen(config.isGdbDebugOpen);
+                  if (config.breakpoints)
+                    setBreakpoints(config.breakpoints);
+                  if (config.chatMode) setChatMode(config.chatMode);
+                  if (config.chatInputs) setChatInputs(config.chatInputs);
                   stateRestored = true;
                 }
               }
@@ -1184,12 +1210,16 @@ export default function App() {
             setOpenedTabs([]);
           }
         }
+        setIsProjectLoaded(true);
       })
-      .catch((err) => console.error("Failed to load files from server", err));
+      .catch((err) => {
+        console.error("Failed to load files from server", err);
+        setIsProjectLoaded(true);
+      });
   }, [activeProject]);
 
   useEffect(() => {
-    if (!activeProject || !openedTabs.length) return;
+    if (!activeProject || !openedTabs.length || !isProjectLoaded) return;
     const stateObj = {
       openedTabs,
       activeFile,
@@ -1198,6 +1228,10 @@ export default function App() {
       isChatOpen,
       diagramHistory,
       chatWidth,
+      isGdbDebugOpen,
+      breakpoints,
+      chatMode,
+      chatInputs
     };
     localStorage.setItem(
       `workspace_config_${activeProject}`,
@@ -1212,6 +1246,10 @@ export default function App() {
     isChatOpen,
     diagramHistory,
     chatWidth,
+    isGdbDebugOpen,
+    breakpoints,
+    chatMode,
+    chatInputs
   ]);
 
   const fileList = useMemo(
@@ -1832,7 +1870,7 @@ int main(int argc, char** argv) {
 
       {/* Main Content */}
       <div className="flex-1 w-full overflow-hidden">
-        <PanelGroup orientation="horizontal" id="workspace-horizontal-v5">
+        <PanelGroup orientation="horizontal" id="workspace-horizontal-v5" autoSaveId={`workspace-horizontal-${activeProject || 'global'}`}>
           {/* Left Panel */}
           {isGdbDebugOpen ? (
             <>
@@ -2017,7 +2055,7 @@ int main(int argc, char** argv) {
             minSize={30}
             className="flex flex-col min-w-0 bg-[#1e1e1e]"
           >
-            <PanelGroup orientation="vertical" id="workspace-vertical-v5">
+            <PanelGroup orientation="vertical" id="workspace-vertical-v5" autoSaveId={`workspace-vertical-${activeProject || 'global'}`}>
               <Panel
                 id="editor-main"
                 defaultSize={70}
