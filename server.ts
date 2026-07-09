@@ -852,8 +852,8 @@ async function startServer() {
           ws.send(JSON.stringify({ type: 'output', data: `Starting GDB with ${execName}...\n` }));
 
           // Start GDB process
-          gdbProcess = spawn('gdb', ['-q', execName], { cwd: exportDir });
-          gdbProcess.stdin?.write(`set breakpoint pending on\n`);
+          gdbProcess = spawn('gdb', ['--interpreter=mi2', execName], { cwd: exportDir });
+          gdbProcess.stdin?.write(`-gdb-set breakpoint pending on\n`);
           
           gdbProcess.stdout?.on('data', (out) => {
             ws.send(JSON.stringify({ type: 'output', data: out.toString() }));
@@ -872,7 +872,7 @@ async function startServer() {
           if (breakpoints) {
             for (const file of Object.keys(breakpoints)) {
               for (const line of breakpoints[file]) {
-                gdbProcess.stdin?.write(`break ${file}:${line}\n`);
+                gdbProcess.stdin?.write(`-break-insert ${file}:${line}\n`);
               }
             }
           }

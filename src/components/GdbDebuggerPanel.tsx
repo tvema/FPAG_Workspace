@@ -37,12 +37,54 @@ export function GdbDebuggerPanel({
   const wsRef = useRef<WebSocket | null>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
+  const [variables, setVariables] = useState<Array<{ name: string, value: string, type: string, expanded: boolean }>>([]);
+  const [callstack, setCallstack] = useState<Array<{ id: number, frame: string, file: string, line: number, active: boolean }>>([]);
+
   useEffect(() => {
     // Scroll to bottom when output changes
     if (consoleEndRef.current) {
       consoleEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [consoleOutput]);
+
+  const parseMIString = (str: string) => {
+    try {
+      return JSON.parse(str);
+    } catch (e) {
+      return str;
+    }
+  };
+
+  const parseMIVariables = (line: string) => {
+    const vars: any[] = [];
+    const regex = /{name="([^"]+)",.*?type="([^"]+)"(?:,value="([^"]+)")?}/g;
+    let match;
+    while ((match = regex.exec(line)) !== null) {
+      vars.push({
+        name: match[1],
+        type: match[2],
+        value: match[3] || "<complex>",
+        expanded: false
+      });
+    }
+    if (vars.length > 0) setVariables(vars);
+  };
+
+  const parseMIStack = (line: string) => {
+    const frames: any[] = [];
+    const regex = /frame={level="([^"]+)",addr="([^"]+)",func="([^"]+)",(?:args=\[.*?\],)?(?:file="([^"]+)",fullname="[^"]+",line="([^"]+)"|.*?)}/g;
+    let match;
+    while ((match = regex.exec(line)) !== null) {
+      frames.push({
+        id: parseInt(match[1]),
+        frame: `#${match[1]} ${match[3]} at ${match[2]}`,
+        file: match[4] || "",
+        line: parseInt(match[5] || "0"),
+        active: match[1] === "0"
+      });
+    }
+    if (frames.length > 0) setCallstack(frames);
+  };
 
   const startGdb = () => {
     if (wsRef.current) {
@@ -52,6 +94,8 @@ export function GdbDebuggerPanel({
     const wsUrl = window.location.protocol === 'https:' ? `wss://${window.location.host}` : `ws://${window.location.host}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
+    setVariables([]);
+    setCallstack([]);
 
     ws.onopen = () => {
       setConsoleOutput(["Connected to GDB backend. Starting session..."]);
@@ -72,7 +116,27 @@ export function GdbDebuggerPanel({
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       if (msg.type === 'output' || msg.type === 'error') {
-        setConsoleOutput(prev => [...prev, msg.data]);
+        const lines = msg.data.split('\n');
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          if (line.startsWith('~') || line.startsWith('@') || line.startsWith('&')) {
+            setConsoleOutput(prev => [...prev, parseMIString(line.substring(1))]);
+          } else if (line.startsWith('*stopped')) {
+            setConsoleOutput(prev => [...prev, "Program stopped."]);
+            // Program stopped, fetch stack and variables
+            ws.send(JSON.stringify({ type: 'command', command: '-stack-list-frames' }));
+            ws.send(JSON.stringify({ type: 'command', command: '-stack-list-variables --thread 1 --frame 0 --simple-values' }));
+          } else if (line.startsWith('^done,stack=')) {
+            parseMIStack(line);
+          } else if (line.startsWith('^done,variables=')) {
+            parseMIVariables(line);
+          } else if (line.startsWith('^error')) {
+            setConsoleOutput(prev => [...prev, "Error: " + line]);
+          } else if (!line.startsWith('^') && !line.startsWith('*') && !line.startsWith('=')) {
+            // Unparsed output
+            setConsoleOutput(prev => [...prev, line]);
+          }
+        }
       }
     };
 
@@ -92,7 +156,7 @@ export function GdbDebuggerPanel({
 
   const sendCommand = (cmd: string) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      setConsoleOutput(prev => [...prev, `(gdb) ${cmd}`]);
+      setConsoleOutput(prev => [...prev, `> ${cmd}`]);
       wsRef.current.send(JSON.stringify({ type: 'command', command: cmd }));
     }
   };
@@ -103,15 +167,6 @@ export function GdbDebuggerPanel({
       setCommandInput("");
     }
   };
-
-  // Mock data for visual layout
-  const variables = [
-    { name: "No variables (MI parsing not fully implemented)", value: "", type: "", expanded: false }
-  ];
-
-  const callstack = [
-    { id: 1, frame: "No callstack (MI parsing not fully implemented)", file: "", line: 0, active: true },
-  ];
 
   const actualBreakpoints = Object.entries(breakpoints || {}).flatMap(([fid, lines]) => {
     const p = (filesData && filesData[fid]) ? filesData[fid].path : fid;
@@ -129,20 +184,20 @@ export function GdbDebuggerPanel({
       {/* Top Controls Bar */}
       <div className="flex items-center justify-between px-3 py-2 bg-[#1f1f23] border-b border-white/10 shrink-0">
         <div className="flex items-center gap-1.5">
-          <button onClick={() => sendCommand("continue")} className="p-1.5 rounded-md hover:bg-white/10 text-emerald-400" title="Continue">
+          <button onClick={() => sendCommand("-exec-continue")} className="p-1.5 rounded-md hover:bg-white/10 text-emerald-400" title="Continue">
             <Play className="w-4 h-4" />
           </button>
-          <button onClick={() => sendCommand("interrupt")} className="p-1.5 rounded-md hover:bg-white/10 text-slate-300" title="Pause">
+          <button onClick={() => sendCommand("-exec-interrupt")} className="p-1.5 rounded-md hover:bg-white/10 text-slate-300" title="Pause">
             <Pause className="w-4 h-4" />
           </button>
           <div className="w-px h-4 bg-white/10 mx-1"></div>
-          <button onClick={() => sendCommand("next")} className="p-1.5 rounded-md hover:bg-white/10 text-blue-400" title="Step Over">
+          <button onClick={() => sendCommand("-exec-next")} className="p-1.5 rounded-md hover:bg-white/10 text-blue-400" title="Step Over">
             <ArrowRightCircle className="w-4 h-4" />
           </button>
-          <button onClick={() => sendCommand("step")} className="p-1.5 rounded-md hover:bg-white/10 text-blue-400" title="Step Into">
+          <button onClick={() => sendCommand("-exec-step")} className="p-1.5 rounded-md hover:bg-white/10 text-blue-400" title="Step Into">
             <ArrowDownCircle className="w-4 h-4" />
           </button>
-          <button onClick={() => sendCommand("finish")} className="p-1.5 rounded-md hover:bg-white/10 text-blue-400" title="Step Out">
+          <button onClick={() => sendCommand("-exec-finish")} className="p-1.5 rounded-md hover:bg-white/10 text-blue-400" title="Step Out">
             <ArrowUpCircle className="w-4 h-4" />
           </button>
           <div className="w-px h-4 bg-white/10 mx-1"></div>
@@ -195,11 +250,16 @@ export function GdbDebuggerPanel({
           {activeTab === "variables" && (
             <div className="space-y-1">
               <div className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider">Locals</div>
-              {variables.map((v, i) => (
+              {variables.length === 0 ? (
+                <div className="text-xs text-slate-500">No variables available.</div>
+              ) : variables.map((v, i) => (
                 <div key={i} className="flex flex-col">
                   <div className="flex items-center gap-1 text-sm text-slate-300 hover:bg-white/5 rounded px-1 py-0.5">
                     <div className="w-3.5" />
                     <span className="text-blue-300 font-mono text-xs">{v.name}</span>
+                    <span className="text-slate-500 text-xs">:</span>
+                    <span className="text-emerald-300 font-mono text-xs truncate flex-1">{v.value}</span>
+                    <span className="text-slate-500 text-[10px] ml-2 opacity-60">{v.type}</span>
                   </div>
                 </div>
               ))}
@@ -208,7 +268,9 @@ export function GdbDebuggerPanel({
 
           {activeTab === "callstack" && (
             <div className="space-y-0.5">
-              {callstack.map((frame, i) => (
+              {callstack.length === 0 ? (
+                <div className="text-xs text-slate-500 p-1">Call stack empty.</div>
+              ) : callstack.map((frame, i) => (
                 <div
                   key={i}
                   className={`flex flex-col py-1 px-2 rounded cursor-pointer ${
@@ -216,6 +278,9 @@ export function GdbDebuggerPanel({
                   }`}
                 >
                   <div className="text-xs font-mono text-slate-300 truncate">{frame.frame}</div>
+                  {frame.file && (
+                    <div className="text-[10px] text-slate-500 mt-0.5">{frame.file}:{frame.line}</div>
+                  )}
                 </div>
               ))}
             </div>
