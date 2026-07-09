@@ -41,6 +41,11 @@ export function CodeEditorWrapper({
     }
   }, [activeFile, debouncedSetFilesData]);
 
+  const activeFileRef = useRef(activeFile);
+  useEffect(() => {
+    activeFileRef.current = activeFile;
+  }, [activeFile]);
+
   const handleMount = useCallback((editor: any, monaco: any) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
@@ -49,18 +54,19 @@ export function CodeEditorWrapper({
     editor.onMouseDown((e: any) => {
       if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
         const line = e.target.position.lineNumber;
-        if (setBreakpoints && activeFile) {
+        const currentFile = activeFileRef.current;
+        if (setBreakpoints && currentFile) {
           setBreakpoints(prev => {
-            const current = prev[activeFile] || [];
+            const current = prev[currentFile] || [];
             const newBreakpoints = current.includes(line)
               ? current.filter(l => l !== line)
               : [...current, line];
-            return { ...prev, [activeFile]: newBreakpoints };
+            return { ...prev, [currentFile]: newBreakpoints };
           });
         }
       }
     });
-  }, [handleEditorDidMount, activeFile, setBreakpoints]);
+  }, [handleEditorDidMount, setBreakpoints]);
 
   useEffect(() => {
     if (editorRef.current && monacoRef.current && breakpoints && activeFile) {
