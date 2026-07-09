@@ -827,8 +827,32 @@ async function startServer() {
             return;
           }
           
+          // Determine executable name
+          let execName = './main';
+          try {
+            const makefileContent = await fs.readFile(nodePath.join(exportDir, 'Makefile'), 'utf-8');
+            const targetMatch = makefileContent.match(/^(?:TARGET|PROG|BIN|OUTPUT|EXEC|APP|OUT)\s*[:?]?=\s*([^\s#]+)/m);
+            if (targetMatch && targetMatch[1]) {
+              execName = './' + targetMatch[1].trim();
+            } else {
+              // Try to find an executable file if Makefile parsing didn't find a standard variable
+              const filesInDir = await fs.readdir(exportDir);
+              for (const file of filesInDir) {
+                const stat = await fs.stat(nodePath.join(exportDir, file));
+                if (stat.isFile() && (stat.mode & 0o111) && !file.includes('.') && file !== 'Makefile') {
+                  execName = './' + file;
+                  break;
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Error finding executable name:", e);
+          }
+          
+          ws.send(JSON.stringify({ type: 'output', data: `Starting GDB with ${execName}...\n` }));
+
           // Start GDB process
-          gdbProcess = spawn('gdb', ['-q', './main'], { cwd: exportDir });
+          gdbProcess = spawn('gdb', ['-q', execName], { cwd: exportDir });
           gdbProcess.stdin?.write(`set breakpoint pending on\n`);
           
           gdbProcess.stdout?.on('data', (out) => {
