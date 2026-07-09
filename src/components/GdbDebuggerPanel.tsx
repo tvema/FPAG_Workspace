@@ -36,6 +36,7 @@ export function GdbDebuggerPanel({
   const [isConsoleOpen, setIsConsoleOpen] = useState(true);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [commandInput, setCommandInput] = useState("");
+  const [programState, setProgramState] = useState<"none" | "running" | "stopped" | "exited">("none");
   const wsRef = useRef<WebSocket | null>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
@@ -113,17 +114,25 @@ export function GdbDebuggerPanel({
 
   const parseMIStack = (line: string) => {
     const frames: any[] = [];
-    const regex = /frame={level="([^"]+)",addr="([^"]+)",func="([^"]+)",(?:args=\[.*?\],)?(?:file="([^"]+)",fullname="[^"]+",line="([^"]+)"|.*?)}/g;
-    let match;
     let topFrameFile = "";
     let topFrameLine = 0;
-    while ((match = regex.exec(line)) !== null) {
-      const level = match[1];
-      const fileRaw = match[4] || "";
-      const lineNum = parseInt(match[5] || "0");
+    
+    const framesStr = line.split('frame={').slice(1);
+    framesStr.forEach(fStr => {
+      const getVal = (key: string) => {
+        const m = fStr.match(new RegExp(key + '="([^"]+)"'));
+        return m ? m[1] : "";
+      };
+      
+      const level = getVal("level");
+      const func = getVal("func");
+      const fileRaw = getVal("file") || getVal("fullname");
+      const lineNum = parseInt(getVal("line") || "0");
+      const addr = getVal("addr");
+
       frames.push({
-        id: parseInt(level),
-        frame: `#${level} ${match[3]} at ${match[2]}`,
+        id: parseInt(level || "0"),
+        frame: `#${level} ${func} at ${addr}`,
         file: fileRaw,
         line: lineNum,
         active: level === "0"
@@ -132,12 +141,16 @@ export function GdbDebuggerPanel({
         topFrameFile = fileRaw;
         topFrameLine = lineNum;
       }
-    }
+    });
+
     if (frames.length > 0) {
       setCallstack(frames);
       if (topFrameFile && onNavigate && filesData) {
         // Find matching fileId
-        const fileId = Object.keys(filesData).find(fid => filesData[fid].path.endsWith(topFrameFile)) || topFrameFile;
+        const fileId = Object.keys(filesData).find(fid => {
+          const p = filesData[fid].path.replace(/^\.\//, '');
+          return topFrameFile.endsWith(p) || p.endsWith(topFrameFile);
+        }) || topFrameFile;
         onNavigate(fileId, topFrameLine);
       }
     }
@@ -153,6 +166,7 @@ export function GdbDebuggerPanel({
     wsRef.current = ws;
     setVariables([]);
     setCallstack([]);
+    setProgramState("none");
 
     ws.onopen = () => {
       setConsoleOutput(["Connected to GDB backend. Starting session..."]);
@@ -178,6 +192,7 @@ export function GdbDebuggerPanel({
       setTimeout(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           sendCommand("-exec-run");
+          setProgramState("running");
         }
       }, 500);
     };
@@ -191,10 +206,15 @@ export function GdbDebuggerPanel({
           if (line.startsWith('~') || line.startsWith('@') || line.startsWith('&')) {
             setConsoleOutput(prev => [...prev, parseMIString(line.substring(1))]);
           } else if (line.startsWith('*stopped')) {
+            setProgramState("stopped");
             setConsoleOutput(prev => [...prev, "Program stopped."]);
             // Program stopped, fetch stack and variables
             ws.send(JSON.stringify({ type: 'command', command: '-stack-list-frames' }));
             ws.send(JSON.stringify({ type: 'command', command: '-stack-list-variables --thread 1 --frame 0 --simple-values' }));
+          } else if (line.startsWith('*running')) {
+            setProgramState("running");
+          } else if (line.startsWith('=thread-group-exited') || line.includes('reason="exited-normally"')) {
+            setProgramState("exited");
           } else if (line.startsWith('^done,stack=')) {
             parseMIStack(line);
           } else if (line.startsWith('^done,variables=')) {
@@ -251,12 +271,23 @@ export function GdbDebuggerPanel({
     });
   });
 
+  const handlePlay = () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      startGdb();
+    } else if (programState === "none" || programState === "exited") {
+      sendCommand("-exec-run");
+      setProgramState("running");
+    } else {
+      sendCommand("-exec-continue");
+    }
+  };
+
   return (
     <div className="flex flex-col w-full h-full bg-[#18181b] border-l border-white/10 overflow-hidden font-sans">
       {/* Top Controls Bar */}
       <div className="flex items-center justify-between px-3 py-2 bg-[#1f1f23] border-b border-white/10 shrink-0">
         <div className="flex items-center gap-1.5">
-          <button onClick={() => sendCommand("-exec-continue")} className="p-1.5 rounded-md hover:bg-white/10 text-emerald-400" title="Continue">
+          <button onClick={handlePlay} className="p-1.5 rounded-md hover:bg-white/10 text-emerald-400" title="Start / Continue">
             <Play className="w-4 h-4" />
           </button>
           <button onClick={() => sendCommand("-exec-interrupt")} className="p-1.5 rounded-md hover:bg-white/10 text-slate-300" title="Pause">
@@ -347,7 +378,10 @@ export function GdbDebuggerPanel({
                   key={i}
                   onClick={() => {
                     if (frame.file && onNavigate && filesData) {
-                      const fileId = Object.keys(filesData).find(fid => filesData[fid].path.endsWith(frame.file)) || frame.file;
+                      const fileId = Object.keys(filesData).find(fid => {
+                        const p = filesData[fid].path.replace(/^\.\//, '');
+                        return frame.file.endsWith(p) || p.endsWith(frame.file);
+                      }) || frame.file;
                       onNavigate(fileId, frame.line);
                     }
                   }}

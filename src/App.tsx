@@ -1855,7 +1855,7 @@ int main(int argc, char** argv) {
                     setActiveFile(fileId);
                     setTimeout(() => {
                       window.dispatchEvent(new CustomEvent('editor-goto-line', { detail: { fileId, line } }));
-                    }, 50);
+                    }, 200);
                   }}
                 />
               </Panel>
