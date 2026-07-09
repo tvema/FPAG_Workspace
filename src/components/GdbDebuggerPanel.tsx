@@ -16,12 +16,16 @@ import {
 export function GdbDebuggerPanel({
   fileId,
   filePath,
+  projectId,
+  filesData,
   onClose,
   breakpoints,
   setBreakpoints,
 }: {
   fileId: string;
   filePath: string;
+  projectId: string | null;
+  filesData?: Record<string, any>;
   onClose: () => void;
   breakpoints?: Record<string, number[]>;
   setBreakpoints?: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
@@ -51,10 +55,17 @@ export function GdbDebuggerPanel({
 
     ws.onopen = () => {
       setConsoleOutput(["Connected to GDB backend. Starting session..."]);
+      
+      const mappedBreakpoints: Record<string, number[]> = {};
+      actualBreakpoints.forEach(bp => {
+        if (!mappedBreakpoints[bp.file]) mappedBreakpoints[bp.file] = [];
+        mappedBreakpoints[bp.file].push(bp.line);
+      });
+
       ws.send(JSON.stringify({
         type: 'start',
-        projectId: 'default', // TODO: Get from context if needed
-        breakpoints
+        projectId: projectId || 'default',
+        breakpoints: mappedBreakpoints
       }));
     };
 
@@ -102,14 +113,16 @@ export function GdbDebuggerPanel({
     { id: 1, frame: "No callstack (MI parsing not fully implemented)", file: "", line: 0, active: true },
   ];
 
-  const actualBreakpoints = Object.entries(breakpoints || {}).flatMap(([file, lines]) => 
-    lines.map((line, idx) => ({
-      id: `${file}-${line}`,
-      file,
+  const actualBreakpoints = Object.entries(breakpoints || {}).flatMap(([fid, lines]) => {
+    const p = (filesData && filesData[fid]) ? filesData[fid].path : fid;
+    return lines.map((line, idx) => ({
+      id: `${fid}-${line}`,
+      fileId: fid,
+      file: p,
       line,
       enabled: true
-    }))
-  );
+    }));
+  });
 
   return (
     <div className="flex flex-col w-full h-full bg-[#18181b] border-l border-white/10 overflow-hidden font-sans">

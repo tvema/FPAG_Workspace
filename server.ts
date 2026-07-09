@@ -802,7 +802,19 @@ async function startServer() {
           const exportDir = nodePath.resolve(nodePath.join(process.cwd(), '.workspace_export'), sanitize(project.name));
           
           // First, compile the project
-          ws.send(JSON.stringify({ type: 'output', data: 'Compiling project...' }));
+          ws.send(JSON.stringify({ type: 'output', data: 'Exporting files...' }));
+          const fs = await import('fs/promises');
+          const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string, is_link?: number }[];
+          await fs.mkdir(exportDir, { recursive: true });
+          for (const file of files) {
+            if (file.is_link) continue;
+            if (file.path.endsWith('.gitkeep')) continue;
+            const fullPath = nodePath.resolve(exportDir, file.path);
+            await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+            await fs.writeFile(fullPath, file.content || '', 'utf8');
+          }
+
+          ws.send(JSON.stringify({ type: 'output', data: 'Compiling project...\n' }));
           const { exec } = await import('child_process');
           const { promisify } = await import('util');
           const execAsync = promisify(exec);
@@ -817,6 +829,7 @@ async function startServer() {
           
           // Start GDB process
           gdbProcess = spawn('gdb', ['-q', './main'], { cwd: exportDir });
+          gdbProcess.stdin?.write(`set breakpoint pending on\n`);
           
           gdbProcess.stdout?.on('data', (out) => {
             ws.send(JSON.stringify({ type: 'output', data: out.toString() }));

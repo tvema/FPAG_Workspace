@@ -1846,6 +1846,8 @@ int main(int argc, char** argv) {
                 <GdbDebuggerPanel
                   fileId={activeFile}
                   filePath={filesData[activeFile]?.path || ""}
+                  projectId={activeProject}
+                  filesData={filesData}
                   onClose={() => setIsGdbDebugOpen(false)}
                   breakpoints={breakpoints}
                   setBreakpoints={setBreakpoints}
