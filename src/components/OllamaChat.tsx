@@ -57,12 +57,22 @@ const MessageContent = React.memo(function MessageContent({ content, onAddFile, 
     
     // Check if there are any <file path="..."> blocks
     const multiFiles = useMemo(() => {
-        const fileRegex = /<file\s+path="([^"]+)">\s*([\s\S]*?)\s*<\/file>/g;
+        const fileRegex = /<file\s+(?:[^>]*?)path=(?:['"]([^'"]+)['"]|([^\s>]+))[^>]*>\s*([\s\S]*?)\s*<\/file>/gi;
         const matches = [...content.matchAll(fileRegex)];
         if (matches.length > 0) {
             const files: Record<string, string> = {};
             matches.forEach(m => {
-                files[m[1]] = m[2];
+                let fileContent = m[3].trim();
+                if (fileContent.startsWith('```')) {
+                    const firstNewline = fileContent.indexOf('\n');
+                    if (firstNewline !== -1) {
+                        fileContent = fileContent.substring(firstNewline + 1);
+                    }
+                    if (fileContent.endsWith('```')) {
+                        fileContent = fileContent.substring(0, fileContent.length - 3).trim();
+                    }
+                }
+                files[m[1] || m[2]] = fileContent;
             });
             return files;
         }
@@ -72,7 +82,9 @@ const MessageContent = React.memo(function MessageContent({ content, onAddFile, 
     const parts = useMemo(() => {
         let text = content;
         if (multiFiles) {
-            text = text.replace(/<file\s+path="([^"]+)">\s*([\s\S]*?)\s*<\/file>/g, '\n[File block extracted]\n');
+            text = text.replace(/```xml\s*<file\s+(?:[^>]*?)path=(?:['"]([^'"]+)['"]|([^\s>]+))[^>]*>\s*([\s\S]*?)\s*<\/file>\s*```/gi, '\n[File block extracted]\n');
+            text = text.replace(/```\s*<file\s+(?:[^>]*?)path=(?:['"]([^'"]+)['"]|([^\s>]+))[^>]*>\s*([\s\S]*?)\s*<\/file>\s*```/gi, '\n[File block extracted]\n');
+            text = text.replace(/<file\s+(?:[^>]*?)path=(?:['"]([^'"]+)['"]|([^\s>]+))[^>]*>\s*([\s\S]*?)\s*<\/file>/gi, '\n[File block extracted]\n');
         }
         
         const result = [];
