@@ -1870,7 +1870,7 @@ int main(int argc, char** argv) {
 
       {/* Main Content */}
       <div className="flex-1 w-full overflow-hidden">
-        <PanelGroup orientation="horizontal" id="workspace-horizontal-v5" autoSaveId={`workspace-horizontal-${activeProject || 'global'}`}>
+        <PanelGroup orientation="horizontal" id={`workspace-horizontal-${activeProject || 'global'}`}>
           {/* Left Panel */}
           {isGdbDebugOpen ? (
             <>
@@ -2055,7 +2055,7 @@ int main(int argc, char** argv) {
             minSize={30}
             className="flex flex-col min-w-0 bg-[#1e1e1e]"
           >
-            <PanelGroup orientation="vertical" id="workspace-vertical-v5" autoSaveId={`workspace-vertical-${activeProject || 'global'}`}>
+            <PanelGroup orientation="vertical" id={`workspace-vertical-${activeProject || 'global'}`}>
               <Panel
                 id="editor-main"
                 defaultSize={70}

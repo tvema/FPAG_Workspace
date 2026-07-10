@@ -68,16 +68,8 @@ export function CodeEditorWrapper({
     };
   }, [activeFile]);
 
-  useEffect(() => {
-    setLocalValue(fileContent);
-  }, [activeFile, fileContent]);
-
-  const onChange = useCallback((val: string | undefined) => {
-    if (val !== undefined && activeFile) {
-      setLocalValue(val);
-      debouncedSetFilesData(activeFile, val);
-    }
-  }, [activeFile, debouncedSetFilesData]);
+  const localValueRef = useRef(fileContent);
+  const activeFileChangeRef = useRef(activeFile);
 
   const updateBreakpoints = useCallback(() => {
     if (editorRef.current && monacoRef.current && breakpoints && activeFile) {
@@ -95,6 +87,32 @@ export function CodeEditorWrapper({
       );
     }
   }, [breakpoints, activeFile]);
+
+  useEffect(() => {
+    if (fileContent !== localValueRef.current || activeFile !== activeFileChangeRef.current) {
+      setLocalValue(fileContent);
+      localValueRef.current = fileContent;
+      activeFileChangeRef.current = activeFile;
+      
+      // Since it's an external change or load, restore view state and breakpoints
+      setTimeout(() => {
+        if (editorRef.current && activeFileRef.current === activeFile) {
+          if (editorViewStates[activeFile]) {
+            editorRef.current.restoreViewState(editorViewStates[activeFile]);
+          }
+          updateBreakpoints();
+        }
+      }, 100);
+    }
+  }, [activeFile, fileContent, updateBreakpoints]);
+
+  const onChange = useCallback((val: string | undefined) => {
+    if (val !== undefined && activeFile) {
+      setLocalValue(val);
+      localValueRef.current = val;
+      debouncedSetFilesData(activeFile, val);
+    }
+  }, [activeFile, debouncedSetFilesData]);
 
   useEffect(() => {
     updateBreakpoints();
