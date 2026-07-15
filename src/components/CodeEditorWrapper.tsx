@@ -35,8 +35,7 @@ export function CodeEditorWrapper({
   setBreakpoints
 }: CodeEditorWrapperProps) {
   const fileContent = filesData[activeFile]?.content || '';
-  const [localValue, setLocalValue] = useState(fileContent);
-  const editorRef = useRef<any>(null);
+    const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
   const decorationsRef = useRef<string[]>([]);
 
@@ -68,7 +67,7 @@ export function CodeEditorWrapper({
     };
   }, [activeFile]);
 
-  const localValueRef = useRef(fileContent);
+  const pendingUserEdits = useRef<string[]>([]);
   const activeFileChangeRef = useRef(activeFile);
 
   const updateBreakpoints = useCallback(() => {
@@ -89,10 +88,13 @@ export function CodeEditorWrapper({
   }, [breakpoints, activeFile]);
 
   useEffect(() => {
-    if (fileContent !== localValueRef.current || activeFile !== activeFileChangeRef.current) {
-      setLocalValue(fileContent);
-      localValueRef.current = fileContent;
+    if (activeFile !== activeFileChangeRef.current) {
+      pendingUserEdits.current = [];
       activeFileChangeRef.current = activeFile;
+      
+      if (editorRef.current) {
+        editorRef.current.setValue(fileContent);
+      }
       
       // Since it's an external change or load, restore view state and breakpoints
       setTimeout(() => {
@@ -103,13 +105,47 @@ export function CodeEditorWrapper({
           updateBreakpoints();
         }
       }, 100);
+    } else if (editorRef.current) {
+      if (fileContent === editorRef.current.getValue()) {
+        pendingUserEdits.current = [];
+      } else {
+        const idx = pendingUserEdits.current.lastIndexOf(fileContent);
+        if (idx !== -1) {
+          // It's a stale update from our debounce
+          pendingUserEdits.current.splice(0, idx + 1);
+        } else {
+          // External update! (AI merge, etc)
+          pendingUserEdits.current = [];
+          // Preserve cursor and scroll position during external edits
+          if (typeof editorRef.current.executeEdits === 'function') {
+            const model = editorRef.current.getModel();
+            if (model) {
+              editorRef.current.executeEdits('external', [{
+                range: model.getFullModelRange(),
+                text: fileContent,
+                forceMoveMarkers: true
+              }]);
+            } else {
+              editorRef.current.setValue(fileContent);
+            }
+          } else {
+            const position = editorRef.current.getPosition();
+            editorRef.current.setValue(fileContent);
+            if (position) {
+                editorRef.current.setPosition(position);
+            }
+          }
+        }
+      }
     }
-  }, [activeFile, fileContent, updateBreakpoints]);
+  }, [activeFile, fileContent]); // intentionally omitting updateBreakpoints to prevent reset loop
 
   const onChange = useCallback((val: string | undefined) => {
     if (val !== undefined && activeFile) {
-      setLocalValue(val);
-      localValueRef.current = val;
+      pendingUserEdits.current.push(val);
+      if (pendingUserEdits.current.length > 50) {
+        pendingUserEdits.current.shift(); // prevent unbounded growth
+      }
       debouncedSetFilesData(activeFile, val);
     }
   }, [activeFile, debouncedSetFilesData]);
@@ -122,6 +158,11 @@ export function CodeEditorWrapper({
     editorRef.current = editor;
     monacoRef.current = monaco;
     handleEditorDidMount(editor, monaco);
+    
+    const currentFileContent = filesData[activeFileRef.current]?.content || '';
+    if (editor.getValue() !== currentFileContent) {
+        editor.setValue(currentFileContent);
+    }
 
     if (activeFileRef.current && editorViewStates[activeFileRef.current]) {
       editor.restoreViewState(editorViewStates[activeFileRef.current]);
@@ -191,7 +232,8 @@ export function CodeEditorWrapper({
         ['sh', 'bash'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'shell' : 'plaintext'
       }
       beforeMount={handleEditorBeforeMount}
-      value={localValue}
+      defaultValue={fileContent}
+      value={undefined}
       onChange={onChange}
       options={editorOptions}
     />

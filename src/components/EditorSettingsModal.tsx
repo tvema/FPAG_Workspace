@@ -29,7 +29,7 @@ export const defaultEditorSettings: EditorSettings = {
   theme: "zstate-dark",
   fontSize: 13,
   tabSize: 4,
-  insertSpaces: true,
+  insertSpaces: false,
   useTabStops: true,
   wordWrap: "off",
   minimap: true,

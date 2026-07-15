@@ -663,6 +663,7 @@ export default function App() {
       tabSize: editorSettings.tabSize,
       insertSpaces: editorSettings.insertSpaces,
       useTabStops: editorSettings.useTabStops,
+      detectIndentation: false,
       wordWrap: editorSettings.wordWrap,
       lineNumbers: editorSettings.lineNumbers,
       renderWhitespace: editorSettings.renderWhitespace,
