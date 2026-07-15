@@ -174,6 +174,7 @@ export default function App() {
 
   const editorTheme = editorSettings.theme;
   const showMinimap = editorSettings.minimap;
+  const highlightCursorWord = editorSettings.highlightCursorWord;
 
   const [isEditorSettingsOpen, setIsEditorSettingsOpen] = useState(false);
 
@@ -654,13 +655,13 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
 
   const handleEditorBeforeMount = useCallback((monaco: any) => {
     const sharedColors = {
-      "editor.selectionHighlightBackground": "#00ffff60",
-      "editor.selectionHighlightBorder": "#00ffff",
+      "editor.selectionHighlightBackground": "#ffb80060",
+      "editor.selectionHighlightBorder": "#ffb800",
       "editor.wordHighlightBackground": "#ffb80060",
       "editor.wordHighlightBorder": "#ffb800",
       "editor.wordHighlightStrongBackground": "#ffb80080",
       "editor.wordHighlightStrongBorder": "#ffb800",
-      "editorOverviewRuler.selectionHighlightForeground": "#00ffff",
+      "editorOverviewRuler.selectionHighlightForeground": "#ffb800",
       "editorOverviewRuler.wordHighlightForeground": "#ffb800",
       "editorOverviewRuler.wordHighlightStrongForeground": "#ffb800",
       "minimap.selectionHighlight": "#00ff00",

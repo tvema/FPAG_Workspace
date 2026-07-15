@@ -19,6 +19,7 @@ export interface EditorSettings {
     | "block-outline"
     | "underline-thin";
   smoothScrolling: boolean;
+  highlightCursorWord: boolean;
   fontLigatures: boolean;
   formatOnPaste: boolean;
   bracketPairColorization: boolean;
@@ -38,6 +39,7 @@ export const defaultEditorSettings: EditorSettings = {
   renderWhitespace: "none",
   cursorStyle: "line",
   smoothScrolling: false,
+  highlightCursorWord: false,
   fontLigatures: false,
   formatOnPaste: true,
   bracketPairColorization: true,
@@ -178,6 +180,20 @@ export function EditorSettingsModal({
                   />
                   <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
                     Show Minimap
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={settings.highlightCursorWord}
+                    onChange={(e) =>
+                      handleChange("highlightCursorWord", e.target.checked)
+                    }
+                    className="accent-emerald-500 w-4 h-4"
+                  />
+                  <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
+                    Highlight Selected Word
                   </span>
                 </label>
 
