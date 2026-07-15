@@ -23,6 +23,8 @@ export interface EditorSettings {
   fontLigatures: boolean;
   formatOnPaste: boolean;
   bracketPairColorization: boolean;
+  selectionHighlight: boolean;
+  occurrencesHighlight: boolean;
 }
 
 export const defaultEditorSettings: EditorSettings = {
@@ -41,6 +43,8 @@ export const defaultEditorSettings: EditorSettings = {
   fontLigatures: false,
   formatOnPaste: true,
   bracketPairColorization: true,
+  selectionHighlight: true,
+  occurrencesHighlight: false,
 };
 
 interface EditorSettingsModalProps {
@@ -246,6 +250,33 @@ export function EditorSettingsModal({
                   />
                   <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
                     Format on Paste
+                  </span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={settings.selectionHighlight}
+                    onChange={(e) =>
+                      handleChange("selectionHighlight", e.target.checked)
+                    }
+                    className="accent-emerald-500 w-4 h-4"
+                  />
+                  <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
+                    Selection Highlight
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={settings.occurrencesHighlight}
+                    onChange={(e) =>
+                      handleChange("occurrencesHighlight", e.target.checked)
+                    }
+                    className="accent-emerald-500 w-4 h-4"
+                  />
+                  <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
+                    Occurrences Highlight
                   </span>
                 </label>
               </div>

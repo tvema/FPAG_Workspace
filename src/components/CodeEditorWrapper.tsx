@@ -42,6 +42,36 @@ export function CodeEditorWrapper({
   const decorationsRef = useRef<string[]>([]);
   const lastKnownValue = useRef<string>(fileContent);
 
+  const lastEditorOptionsRef = useRef(editorOptions);
+  useEffect(() => {
+    if (editorRef.current && monacoRef.current) {
+      const prev = lastEditorOptionsRef.current;
+      if (
+        prev.selectionHighlight !== editorOptions.selectionHighlight ||
+        prev.occurrencesHighlight !== editorOptions.occurrencesHighlight
+      ) {
+        const selections = editorRef.current.getSelections();
+        if (selections && selections.length > 0) {
+          const first = selections[0];
+          editorRef.current.setSelection(
+            new monacoRef.current.Selection(
+              first.selectionStartLineNumber,
+              first.selectionStartColumn,
+              first.selectionStartLineNumber,
+              first.selectionStartColumn
+            )
+          );
+          setTimeout(() => {
+            if (editorRef.current) {
+              editorRef.current.setSelections(selections);
+            }
+          }, 10);
+        }
+      }
+      lastEditorOptionsRef.current = editorOptions;
+    }
+  }, [editorOptions]);
+
   // Save view state when activeFile changes
   const activeFileRef = useRef(activeFile);
 

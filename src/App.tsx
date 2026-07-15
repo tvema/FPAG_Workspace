@@ -646,8 +646,8 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
       },
       scrollBeyondLastLine: false,
       smoothScrolling: editorSettings.smoothScrolling,
-      occurrencesHighlight: "off",
-      selectionHighlight: false,
+      occurrencesHighlight: editorSettings.occurrencesHighlight ? "singleFile" : "off",
+      selectionHighlight: editorSettings.selectionHighlight,
       glyphMargin: true, // For debugging breakpoints
     }),
     [editorSettings],
