@@ -19,12 +19,9 @@ export interface EditorSettings {
     | "block-outline"
     | "underline-thin";
   smoothScrolling: boolean;
-  highlightCursorWord: boolean;
   fontLigatures: boolean;
   formatOnPaste: boolean;
   bracketPairColorization: boolean;
-  selectionHighlight: boolean;
-  occurrencesHighlight: boolean;
 }
 
 export const defaultEditorSettings: EditorSettings = {
@@ -39,12 +36,9 @@ export const defaultEditorSettings: EditorSettings = {
   renderWhitespace: "none",
   cursorStyle: "line",
   smoothScrolling: false,
-  highlightCursorWord: false,
   fontLigatures: false,
   formatOnPaste: true,
   bracketPairColorization: true,
-  selectionHighlight: true,
-  occurrencesHighlight: false,
 };
 
 interface EditorSettingsModalProps {
@@ -186,20 +180,6 @@ export function EditorSettingsModal({
                 <label className="flex items-center gap-3 cursor-pointer group">
                   <input
                     type="checkbox"
-                    checked={settings.highlightCursorWord}
-                    onChange={(e) =>
-                      handleChange("highlightCursorWord", e.target.checked)
-                    }
-                    className="accent-emerald-500 w-4 h-4"
-                  />
-                  <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
-                    Highlight Selected Word
-                  </span>
-                </label>
-
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <input
-                    type="checkbox"
                     checked={settings.smoothScrolling}
                     onChange={(e) =>
                       handleChange("smoothScrolling", e.target.checked)
@@ -262,7 +242,7 @@ export function EditorSettingsModal({
                     className="accent-emerald-500 w-4 h-4"
                   />
                   <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
-                    Selection Highlight
+                    Highlight Selected Word
                   </span>
                 </label>
 

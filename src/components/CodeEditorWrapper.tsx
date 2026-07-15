@@ -43,6 +43,10 @@ export function CodeEditorWrapper({
   const lastKnownValue = useRef<string>(fileContent);
 
   const lastEditorOptionsRef = useRef(editorOptions);
+  
+  // Track when fileContent actually changes from props vs internal
+  const prevFileContentRef = useRef(fileContent);
+
   useEffect(() => {
     if (editorRef.current && monacoRef.current) {
       const prev = lastEditorOptionsRef.current;
@@ -144,28 +148,31 @@ export function CodeEditorWrapper({
         }
       }, 100);
     } else if (editorRef.current) {
-      if (fileContent !== lastKnownValue.current) {
-        lastKnownValue.current = fileContent;
-        if (fileContent !== editorRef.current.getValue()) {
-          const position = editorRef.current.getPosition();
-          if (typeof editorRef.current.executeEdits === "function") {
-            const model = editorRef.current.getModel();
-            if (model) {
-              editorRef.current.executeEdits("external", [
-                {
-                  range: model.getFullModelRange(),
-                  text: fileContent,
-                  forceMoveMarkers: true,
-                },
-              ]);
+      if (fileContent !== prevFileContentRef.current) {
+        prevFileContentRef.current = fileContent;
+        if (fileContent !== lastKnownValue.current) {
+          lastKnownValue.current = fileContent;
+          if (fileContent !== editorRef.current.getValue()) {
+            const position = editorRef.current.getPosition();
+            if (typeof editorRef.current.executeEdits === "function") {
+              const model = editorRef.current.getModel();
+              if (model) {
+                editorRef.current.executeEdits("external", [
+                  {
+                    range: model.getFullModelRange(),
+                    text: fileContent,
+                    forceMoveMarkers: true,
+                  },
+                ]);
+              } else {
+                editorRef.current.setValue(fileContent);
+              }
             } else {
               editorRef.current.setValue(fileContent);
             }
-          } else {
-            editorRef.current.setValue(fileContent);
-          }
-          if (position) {
-            editorRef.current.setPosition(position);
+            if (position) {
+              editorRef.current.setPosition(position);
+            }
           }
         }
       }
@@ -176,6 +183,8 @@ export function CodeEditorWrapper({
     (val: string | undefined) => {
       if (val !== undefined && activeFile) {
         lastKnownValue.current = val;
+        // Also update prevFileContentRef so we don't treat the incoming prop update as external
+        prevFileContentRef.current = val;
         debouncedSetFilesData(activeFile, val);
       }
     },
@@ -233,6 +242,22 @@ export function CodeEditorWrapper({
           }
         }
       });
+
+      editor.onDidChangeModelContent((e: any) => {
+        if (e.isFlush) return;
+        const change = e.changes[0];
+        // Only trigger on multi-character insertions (like autocomplete inserting "end")
+        if (change && change.text.length > 1) {
+          if (/^\s*(end|endmodule|endcase|endgenerate|endfunction|endtask|endclass|endsequence|endproperty|endgroup|endinterface|endpackage|endprogram|endclocking|endchecker)\b/.test(change.text)) {
+            setTimeout(() => {
+              const action = editor.getAction("editor.action.reindentselectedlines");
+              if (action) {
+                action.run();
+              }
+            }, 50);
+          }
+        }
+      });
     },
     [handleEditorDidMount, setBreakpoints],
   );
@@ -260,7 +285,7 @@ export function CodeEditorWrapper({
         ["v", "sv", "verilog"].includes(
           filesData[activeFile]?.type?.toLowerCase() || "",
         )
-          ? "verilog"
+          ? "systemverilog"
           : ["tcl", "sdc"].includes(
                 filesData[activeFile]?.type?.toLowerCase() || "",
               )
