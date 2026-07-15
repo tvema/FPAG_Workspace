@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import Editor from '@monaco-editor/react';
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import Editor from "@monaco-editor/react";
 
 interface CodeEditorWrapperProps {
   activeFile: string;
@@ -10,10 +10,12 @@ interface CodeEditorWrapperProps {
   editorOptions: any;
   debouncedSetFilesData: (fileId: string, val: string) => void;
   breakpoints?: Record<string, number[]>;
-  setBreakpoints?: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
+  setBreakpoints?: React.Dispatch<
+    React.SetStateAction<Record<string, number[]>>
+  >;
 }
 
-const LOCAL_STORAGE_KEY = 'monaco_view_states_v1';
+const LOCAL_STORAGE_KEY = "monaco_view_states_v1";
 const editorViewStates: Record<string, any> = (() => {
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -32,20 +34,26 @@ export function CodeEditorWrapper({
   editorOptions,
   debouncedSetFilesData,
   breakpoints,
-  setBreakpoints
+  setBreakpoints,
 }: CodeEditorWrapperProps) {
-  const fileContent = filesData[activeFile]?.content || '';
-    const editorRef = useRef<any>(null);
+  const fileContent = filesData[activeFile]?.content || "";
+  const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
   const decorationsRef = useRef<string[]>([]);
+  const lastKnownValue = useRef<string>(fileContent);
 
   // Save view state when activeFile changes
   const activeFileRef = useRef(activeFile);
+
   useEffect(() => {
     if (editorRef.current && activeFileRef.current) {
-      editorViewStates[activeFileRef.current] = editorRef.current.saveViewState();
+      editorViewStates[activeFileRef.current] =
+        editorRef.current.saveViewState();
       try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(editorViewStates));
+        localStorage.setItem(
+          LOCAL_STORAGE_KEY,
+          JSON.stringify(editorViewStates),
+        );
       } catch (e) {
         // ignore quota errors
       }
@@ -54,12 +62,16 @@ export function CodeEditorWrapper({
     if (editorRef.current && editorViewStates[activeFile]) {
       editorRef.current.restoreViewState(editorViewStates[activeFile]);
     }
-    
+
     return () => {
       if (editorRef.current && activeFileRef.current) {
-        editorViewStates[activeFileRef.current] = editorRef.current.saveViewState();
+        editorViewStates[activeFileRef.current] =
+          editorRef.current.saveViewState();
         try {
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(editorViewStates));
+          localStorage.setItem(
+            LOCAL_STORAGE_KEY,
+            JSON.stringify(editorViewStates),
+          );
         } catch (e) {
           // ignore quota errors
         }
@@ -67,36 +79,32 @@ export function CodeEditorWrapper({
     };
   }, [activeFile]);
 
-  const pendingUserEdits = useRef<string[]>([]);
   const activeFileChangeRef = useRef(activeFile);
 
   const updateBreakpoints = useCallback(() => {
     if (editorRef.current && monacoRef.current && breakpoints && activeFile) {
       const activeBreakpoints = breakpoints[activeFile] || [];
-      const newDecorations = activeBreakpoints.map(line => ({
+      const newDecorations = activeBreakpoints.map((line) => ({
         range: new monacoRef.current.Range(line, 1, line, 1),
         options: {
           isWholeLine: false,
-          glyphMarginClassName: 'bg-red-500 rounded-full w-3 h-3 ml-1 mt-1 cursor-pointer',
-        }
+          glyphMarginClassName:
+            "bg-red-500 rounded-full w-3 h-3 ml-1 mt-1 cursor-pointer",
+        },
       }));
       decorationsRef.current = editorRef.current.deltaDecorations(
         decorationsRef.current,
-        newDecorations
+        newDecorations,
       );
     }
   }, [breakpoints, activeFile]);
 
   useEffect(() => {
     if (activeFile !== activeFileChangeRef.current) {
-      pendingUserEdits.current = [];
       activeFileChangeRef.current = activeFile;
-      
       if (editorRef.current) {
         editorRef.current.setValue(fileContent);
       }
-      
-      // Since it's an external change or load, restore view state and breakpoints
       setTimeout(() => {
         if (editorRef.current && activeFileRef.current === activeFile) {
           if (editorViewStates[activeFile]) {
@@ -106,97 +114,98 @@ export function CodeEditorWrapper({
         }
       }, 100);
     } else if (editorRef.current) {
-      if (fileContent === editorRef.current.getValue()) {
-        pendingUserEdits.current = [];
-      } else {
-        const idx = pendingUserEdits.current.lastIndexOf(fileContent);
-        if (idx !== -1) {
-          // It's a stale update from our debounce
-          pendingUserEdits.current.splice(0, idx + 1);
-        } else {
-          // External update! (AI merge, etc)
-          pendingUserEdits.current = [];
-          // Preserve cursor and scroll position during external edits
-          if (typeof editorRef.current.executeEdits === 'function') {
+      if (fileContent !== lastKnownValue.current) {
+        lastKnownValue.current = fileContent;
+        if (fileContent !== editorRef.current.getValue()) {
+          const position = editorRef.current.getPosition();
+          if (typeof editorRef.current.executeEdits === "function") {
             const model = editorRef.current.getModel();
             if (model) {
-              editorRef.current.executeEdits('external', [{
-                range: model.getFullModelRange(),
-                text: fileContent,
-                forceMoveMarkers: true
-              }]);
+              editorRef.current.executeEdits("external", [
+                {
+                  range: model.getFullModelRange(),
+                  text: fileContent,
+                  forceMoveMarkers: true,
+                },
+              ]);
             } else {
               editorRef.current.setValue(fileContent);
             }
           } else {
-            const position = editorRef.current.getPosition();
             editorRef.current.setValue(fileContent);
-            if (position) {
-                editorRef.current.setPosition(position);
-            }
+          }
+          if (position) {
+            editorRef.current.setPosition(position);
           }
         }
       }
     }
-  }, [activeFile, fileContent]); // intentionally omitting updateBreakpoints to prevent reset loop
+  }, [activeFile, fileContent, updateBreakpoints]);
 
-  const onChange = useCallback((val: string | undefined) => {
-    if (val !== undefined && activeFile) {
-      pendingUserEdits.current.push(val);
-      if (pendingUserEdits.current.length > 50) {
-        pendingUserEdits.current.shift(); // prevent unbounded growth
+  const onChange = useCallback(
+    (val: string | undefined) => {
+      if (val !== undefined && activeFile) {
+        lastKnownValue.current = val;
+        debouncedSetFilesData(activeFile, val);
       }
-      debouncedSetFilesData(activeFile, val);
-    }
-  }, [activeFile, debouncedSetFilesData]);
+    },
+    [activeFile, debouncedSetFilesData],
+  );
 
   useEffect(() => {
     updateBreakpoints();
   }, [updateBreakpoints]);
 
-  const handleMount = useCallback((editor: any, monaco: any) => {
-    editorRef.current = editor;
-    monacoRef.current = monaco;
-    handleEditorDidMount(editor, monaco);
-    
-    const currentFileContent = filesData[activeFileRef.current]?.content || '';
-    if (editor.getValue() !== currentFileContent) {
+  const handleMount = useCallback(
+    (editor: any, monaco: any) => {
+      editorRef.current = editor;
+      monacoRef.current = monaco;
+      handleEditorDidMount(editor, monaco);
+
+      const currentFileContent =
+        filesData[activeFileRef.current]?.content || "";
+      if (editor.getValue() !== currentFileContent) {
         editor.setValue(currentFileContent);
-    }
-
-    if (activeFileRef.current && editorViewStates[activeFileRef.current]) {
-      editor.restoreViewState(editorViewStates[activeFileRef.current]);
-    }
-
-    // Apply breakpoints immediately on mount
-    if (breakpoints && activeFileRef.current) {
-      const activeBreakpoints = breakpoints[activeFileRef.current] || [];
-      const newDecorations = activeBreakpoints.map((line: number) => ({
-        range: new monaco.Range(line, 1, line, 1),
-        options: {
-          isWholeLine: false,
-          glyphMarginClassName: 'bg-red-500 rounded-full w-3 h-3 ml-1 mt-1 cursor-pointer',
-        }
-      }));
-      decorationsRef.current = editor.deltaDecorations([], newDecorations);
-    }
-
-    editor.onMouseDown((e: any) => {
-      if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
-        const line = e.target.position.lineNumber;
-        const currentFile = activeFileRef.current;
-        if (setBreakpoints && currentFile) {
-          setBreakpoints(prev => {
-            const current = prev[currentFile] || [];
-            const newBreakpoints = current.includes(line)
-              ? current.filter(l => l !== line)
-              : [...current, line];
-            return { ...prev, [currentFile]: newBreakpoints };
-          });
-        }
       }
-    });
-  }, [handleEditorDidMount, setBreakpoints]);
+
+      if (activeFileRef.current && editorViewStates[activeFileRef.current]) {
+        editor.restoreViewState(editorViewStates[activeFileRef.current]);
+      }
+
+      // Apply breakpoints immediately on mount
+      if (breakpoints && activeFileRef.current) {
+        const activeBreakpoints = breakpoints[activeFileRef.current] || [];
+        const newDecorations = activeBreakpoints.map((line: number) => ({
+          range: new monaco.Range(line, 1, line, 1),
+          options: {
+            isWholeLine: false,
+            glyphMarginClassName:
+              "bg-red-500 rounded-full w-3 h-3 ml-1 mt-1 cursor-pointer",
+          },
+        }));
+        decorationsRef.current = editor.deltaDecorations([], newDecorations);
+      }
+
+      editor.onMouseDown((e: any) => {
+        if (
+          e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN
+        ) {
+          const line = e.target.position.lineNumber;
+          const currentFile = activeFileRef.current;
+          if (setBreakpoints && currentFile) {
+            setBreakpoints((prev) => {
+              const current = prev[currentFile] || [];
+              const newBreakpoints = current.includes(line)
+                ? current.filter((l) => l !== line)
+                : [...current, line];
+              return { ...prev, [currentFile]: newBreakpoints };
+            });
+          }
+        }
+      });
+    },
+    [handleEditorDidMount, setBreakpoints],
+  );
 
   useEffect(() => {
     const handleGotoLine = (e: any) => {
@@ -206,8 +215,8 @@ export function CodeEditorWrapper({
         editorRef.current.focus();
       }
     };
-    window.addEventListener('editor-goto-line', handleGotoLine);
-    return () => window.removeEventListener('editor-goto-line', handleGotoLine);
+    window.addEventListener("editor-goto-line", handleGotoLine);
+    return () => window.removeEventListener("editor-goto-line", handleGotoLine);
   }, [activeFile]);
 
   return (
@@ -218,21 +227,67 @@ export function CodeEditorWrapper({
       onMount={handleMount}
       path={activeFile}
       language={
-        ['v', 'sv', 'verilog'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'verilog' :
-        ['tcl', 'sdc'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'tcl' :
-        ['makefile', 'mak', 'mk', 'template'].includes(filesData[activeFile]?.type?.toLowerCase() || '') || (filesData[activeFile]?.name || '').toLowerCase() === 'makefile' || (filesData[activeFile]?.name || '').toLowerCase().includes('makefile') ? 'makefile' :
-        ['c', 'h'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'c' :
-        ['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'cpp' :
-        ['ts', 'tsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'typescript' :
-        ['js', 'jsx'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'javascript' :
-        ['json'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'json' :
-        ['md', 'markdown'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'markdown' :
-        ['css'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'css' :
-        ['html'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'html' :
-        ['sh', 'bash'].includes(filesData[activeFile]?.type?.toLowerCase() || '') ? 'shell' : 'plaintext'
+        ["v", "sv", "verilog"].includes(
+          filesData[activeFile]?.type?.toLowerCase() || "",
+        )
+          ? "verilog"
+          : ["tcl", "sdc"].includes(
+                filesData[activeFile]?.type?.toLowerCase() || "",
+              )
+            ? "tcl"
+            : ["makefile", "mak", "mk", "template"].includes(
+                  filesData[activeFile]?.type?.toLowerCase() || "",
+                ) ||
+                (filesData[activeFile]?.name || "").toLowerCase() ===
+                  "makefile" ||
+                (filesData[activeFile]?.name || "")
+                  .toLowerCase()
+                  .includes("makefile")
+              ? "makefile"
+              : ["c", "h"].includes(
+                    filesData[activeFile]?.type?.toLowerCase() || "",
+                  )
+                ? "c"
+                : ["cpp", "cc", "cxx", "hpp", "hh", "hxx"].includes(
+                      filesData[activeFile]?.type?.toLowerCase() || "",
+                    )
+                  ? "cpp"
+                  : ["ts", "tsx"].includes(
+                        filesData[activeFile]?.type?.toLowerCase() || "",
+                      )
+                    ? "typescript"
+                    : ["js", "jsx"].includes(
+                          filesData[activeFile]?.type?.toLowerCase() || "",
+                        )
+                      ? "javascript"
+                      : ["json"].includes(
+                            filesData[activeFile]?.type?.toLowerCase() || "",
+                          )
+                        ? "json"
+                        : ["md", "markdown"].includes(
+                              filesData[activeFile]?.type?.toLowerCase() || "",
+                            )
+                          ? "markdown"
+                          : ["css"].includes(
+                                filesData[activeFile]?.type?.toLowerCase() ||
+                                  "",
+                              )
+                            ? "css"
+                            : ["html"].includes(
+                                  filesData[activeFile]?.type?.toLowerCase() ||
+                                    "",
+                                )
+                              ? "html"
+                              : ["sh", "bash"].includes(
+                                    filesData[
+                                      activeFile
+                                    ]?.type?.toLowerCase() || "",
+                                  )
+                                ? "shell"
+                                : "plaintext"
       }
       beforeMount={handleEditorBeforeMount}
-      defaultValue={fileContent}
+
       value={undefined}
       onChange={onChange}
       options={editorOptions}

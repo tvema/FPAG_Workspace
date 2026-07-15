@@ -297,6 +297,7 @@ export default function App() {
   >([]);
   const activeFileRef = useRef(activeFile);
   const fileUIStatesRef = useRef(fileUIStates);
+  const loadedProjectRef = useRef<string | null>(null);
 
   useEffect(() => {
     activeFileRef.current = activeFile;
@@ -605,39 +606,8 @@ export default function App() {
     attemptJump();
   }, [activeFile, lineJumpTarget]);
 
-  const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
+const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
     editorRef.current = editor;
-
-    let minimapSelectionDecorations: string[] = [];
-    editor.onDidChangeCursorSelection((e: any) => {
-      if (!e.selection.isEmpty()) {
-        minimapSelectionDecorations = editor.deltaDecorations(
-          minimapSelectionDecorations,
-          [
-            {
-              range: new monaco.Range(
-                e.selection.startLineNumber,
-                1,
-                e.selection.endLineNumber,
-                1,
-              ),
-              options: {
-                isWholeLine: true,
-                minimap: {
-                  color: "#00ff00",
-                  position: monaco.editor.MinimapPosition.Inline,
-                },
-              },
-            },
-          ],
-        );
-      } else {
-        minimapSelectionDecorations = editor.deltaDecorations(
-          minimapSelectionDecorations,
-          [],
-        );
-      }
-    });
 
     editor.onMouseDown((e: any) => {
       if (e.event.ctrlKey || e.event.metaKey) {
@@ -667,6 +637,7 @@ export default function App() {
       wordWrap: editorSettings.wordWrap,
       lineNumbers: editorSettings.lineNumbers,
       renderWhitespace: editorSettings.renderWhitespace,
+      accessibilitySupport: "off", // Fixes Monaco RTL selection replacement bug in Firefox
       cursorStyle: editorSettings.cursorStyle,
       fontLigatures: editorSettings.fontLigatures,
       formatOnPaste: editorSettings.formatOnPaste,
@@ -675,10 +646,8 @@ export default function App() {
       },
       scrollBeyondLastLine: false,
       smoothScrolling: editorSettings.smoothScrolling,
-      occurrencesHighlight: editorSettings.highlightCursorWord
-        ? "singleFile"
-        : "off", // Highlight occurrences based on cursor position toggle
-      selectionHighlight: true, // Highlight occurrences of selected text
+      occurrencesHighlight: "off",
+      selectionHighlight: false,
       glyphMargin: true, // For debugging breakpoints
     }),
     [editorSettings],
@@ -1211,16 +1180,18 @@ export default function App() {
             setOpenedTabs([]);
           }
         }
+        loadedProjectRef.current = activeProject;
         setIsProjectLoaded(true);
       })
       .catch((err) => {
         console.error("Failed to load files from server", err);
+        loadedProjectRef.current = activeProject;
         setIsProjectLoaded(true);
       });
   }, [activeProject]);
 
   useEffect(() => {
-    if (!activeProject || !openedTabs.length || !isProjectLoaded) return;
+    if (!activeProject || !openedTabs.length || !isProjectLoaded || activeProject !== loadedProjectRef.current) return;
     const stateObj = {
       openedTabs,
       activeFile,

@@ -48,3 +48,10 @@ It is specifically built for working with Verilog and Intel Quartus Prime files.
    - Minimap selection highlight (`minimap.selectionHighlight` and inline minimap decorations) MUST be bright green (`#00ff00`).
    - Text selection highlights (`editor.selectionHighlightBackground`, `editor.wordHighlightBackground`, etc.) MUST be bright yellow-orange (`#ffb800`).
    - The editor theme (`zstate-dark`) must be passed properly to ALL Monaco editor instances (including diff modals) to prevent Monaco from globally resetting the theme to `vs-dark`.
+
+12. **Monaco Editor Firefox Bug**:
+   - There is a known bug in Monaco Editor where typing a character doesn't replace backward-selected text at once in Firefox. This is due to screen reader optimizations.
+   - MUST set `accessibilitySupport: "off"` in the Monaco `editorOptions` to fix this issue for Firefox users.
+
+13. **Clean Up Temporary Files**:
+   - ALWAYS delete temporary diagnostic, debugging, or patching scripts (e.g., `patch_*.py`, `test_*.js`, etc.) from the workspace once the task is complete to keep the repository clean.
