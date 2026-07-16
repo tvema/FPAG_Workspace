@@ -45,7 +45,12 @@ export function CodeEditorWrapper({
   const lastEditorOptionsRef = useRef(editorOptions);
   
   // Track when fileContent actually changes from props vs internal
-  const prevFileContentRef = useRef(fileContent);
+  const lastPropFileContent = useRef(fileContent);
+  const recentUserEditsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    recentUserEditsRef.current.clear();
+  }, [activeFile]);
 
   useEffect(() => {
     if (editorRef.current && monacoRef.current) {
@@ -148,11 +153,13 @@ export function CodeEditorWrapper({
         }
       }, 100);
     } else if (editorRef.current) {
-      if (fileContent !== prevFileContentRef.current) {
-        prevFileContentRef.current = fileContent;
-        if (fileContent !== lastKnownValue.current) {
-          lastKnownValue.current = fileContent;
-          if (fileContent !== editorRef.current.getValue()) {
+      if (fileContent !== lastPropFileContent.current) {
+        lastPropFileContent.current = fileContent;
+        if (fileContent !== editorRef.current.getValue()) {
+          if (recentUserEditsRef.current.has(fileContent)) {
+            // Stale prop from our own debounced onChange, ignore it to prevent jumping
+            recentUserEditsRef.current.delete(fileContent);
+          } else {
             const position = editorRef.current.getPosition();
             if (typeof editorRef.current.executeEdits === "function") {
               const model = editorRef.current.getModel();
@@ -182,9 +189,11 @@ export function CodeEditorWrapper({
   const onChange = useCallback(
     (val: string | undefined) => {
       if (val !== undefined && activeFile) {
-        lastKnownValue.current = val;
-        // Also update prevFileContentRef so we don't treat the incoming prop update as external
-        prevFileContentRef.current = val;
+        recentUserEditsRef.current.add(val);
+        if (recentUserEditsRef.current.size > 50) {
+          const it = recentUserEditsRef.current.values();
+          recentUserEditsRef.current.delete(it.next().value);
+        }
         debouncedSetFilesData(activeFile, val);
       }
     },
@@ -242,22 +251,6 @@ export function CodeEditorWrapper({
           }
         }
       });
-
-      editor.onDidChangeModelContent((e: any) => {
-        if (e.isFlush) return;
-        const change = e.changes[0];
-        // Only trigger on multi-character insertions (like autocomplete inserting "end")
-        if (change && change.text.length > 1) {
-          if (/^\s*(end|endmodule|endcase|endgenerate|endfunction|endtask|endclass|endsequence|endproperty|endgroup|endinterface|endpackage|endprogram|endclocking|endchecker)\b/.test(change.text)) {
-            setTimeout(() => {
-              const action = editor.getAction("editor.action.reindentselectedlines");
-              if (action) {
-                action.run();
-              }
-            }, 50);
-          }
-        }
-      });
     },
     [handleEditorDidMount, setBreakpoints],
   );
@@ -280,9 +273,9 @@ export function CodeEditorWrapper({
       width="100%"
       theme={editorTheme}
       onMount={handleMount}
-      path={activeFile}
+      path={filesData[activeFile] ? `${activeFile}/${filesData[activeFile].name}` : activeFile}
       language={
-        ["v", "sv", "verilog"].includes(
+        ["sv", "v", "verilog"].includes(
           filesData[activeFile]?.type?.toLowerCase() || "",
         )
           ? "systemverilog"
