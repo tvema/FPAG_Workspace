@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Settings, X } from "lucide-react";
 
@@ -22,6 +23,15 @@ export interface EditorSettings {
   fontLigatures: boolean;
   formatOnPaste: boolean;
   bracketPairColorization: boolean;
+  autoIndent: boolean;
+  occurrencesHighlight: boolean;
+  selectionHighlight: boolean;
+  svIncreaseIndentKeywords?: string;
+  svDecreaseIndentKeywords?: string;
+  svIndentNextLineKeywords?: string;
+  cIncreaseIndentKeywords?: string;
+  cDecreaseIndentKeywords?: string;
+  cIndentNextLineKeywords?: string;
 }
 
 export const defaultEditorSettings: EditorSettings = {
@@ -39,6 +49,15 @@ export const defaultEditorSettings: EditorSettings = {
   fontLigatures: false,
   formatOnPaste: true,
   bracketPairColorization: true,
+  autoIndent: true,
+  occurrencesHighlight: false,
+  selectionHighlight: true,
+  svIncreaseIndentKeywords: "begin class module generate function task case casex casez specify table sequence property clocking group package interface",
+  svDecreaseIndentKeywords: "end endclass endmodule endgenerate endfunction endtask endcase endspecify endtable endsequence endproperty endclocking endgroup endpackage endinterface",
+  svIndentNextLineKeywords: "if else always always_ff always_comb always_latch initial for while do foreach",
+  cIncreaseIndentKeywords: "{",
+  cDecreaseIndentKeywords: "}",
+  cIndentNextLineKeywords: "if else for while do",
 };
 
 interface EditorSettingsModalProps {
@@ -54,6 +73,9 @@ export function EditorSettingsModal({
   onChange,
   onClose,
 }: EditorSettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<"general" | "autoIndent">("general");
+  const [activeIndentLang, setActiveIndentLang] = useState<"systemverilog" | "c">("systemverilog");
+
   const handleChange = (key: keyof EditorSettings, value: any) => {
     onChange({ ...settings, [key]: value });
   };
@@ -73,7 +95,7 @@ export function EditorSettingsModal({
             exit={{ scale: 0.95, opacity: 0 }}
             className="bg-[#1e1e1e] border border-white/10 p-6 rounded-xl w-full max-w-xl shadow-2xl flex flex-col max-h-[80vh]"
           >
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-semibold text-white uppercase tracking-wider flex items-center gap-2">
                 <Settings className="w-4 h-4 text-emerald-400" />
                 Editor Settings
@@ -86,8 +108,33 @@ export function EditorSettingsModal({
               </button>
             </div>
 
+            <div className="flex border-b border-white/10 mb-4">
+              <button
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === "general"
+                    ? "border-emerald-500 text-emerald-400"
+                    : "border-transparent text-slate-400 hover:text-slate-200"
+                }`}
+                onClick={() => setActiveTab("general")}
+              >
+                General
+              </button>
+              <button
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === "autoIndent"
+                    ? "border-emerald-500 text-emerald-400"
+                    : "border-transparent text-slate-400 hover:text-slate-200"
+                }`}
+                onClick={() => setActiveTab("autoIndent")}
+              >
+                Auto Indent
+              </button>
+            </div>
+
             <div className="flex-1 overflow-y-auto pr-2 space-y-6">
-              {/* Theme */}
+              {activeTab === "general" ? (
+                <>
+                  {/* Theme */}
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-400">
                   Theme
@@ -202,6 +249,20 @@ export function EditorSettingsModal({
                   />
                   <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
                     Bracket Pair Colorization
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoIndent ?? true}
+                    onChange={(e) =>
+                      handleChange("autoIndent", e.target.checked)
+                    }
+                    className="accent-emerald-500 w-4 h-4"
+                  />
+                  <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
+                    Auto Indent
                   </span>
                 </label>
 
@@ -336,6 +397,99 @@ export function EditorSettingsModal({
                   </select>
                 </div>
               </div>
+                </>
+              ) : (
+                <div className="flex flex-col gap-6">
+                  <div className="flex flex-col gap-2 mb-2">
+                    <label className="text-xs font-semibold text-slate-400">
+                      Language
+                    </label>
+                    <select
+                      className="bg-[#121214] border border-white/10 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 w-full"
+                      value={activeIndentLang}
+                      onChange={(e) => setActiveIndentLang(e.target.value as any)}
+                    >
+                      <option value="systemverilog">Verilog / SystemVerilog</option>
+                      <option value="c">C / C++</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-400">
+                      Increase Indent Keywords (space separated)
+                    </label>
+                    <textarea
+                      value={
+                        activeIndentLang === "systemverilog"
+                          ? settings.svIncreaseIndentKeywords ?? defaultEditorSettings.svIncreaseIndentKeywords
+                          : settings.cIncreaseIndentKeywords ?? defaultEditorSettings.cIncreaseIndentKeywords
+                      }
+                      onChange={(e) =>
+                        handleChange(
+                          activeIndentLang === "systemverilog" ? "svIncreaseIndentKeywords" : "cIncreaseIndentKeywords",
+                          e.target.value
+                        )
+                      }
+                      className="bg-[#121214] border border-white/10 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 font-mono"
+                      rows={3}
+                      placeholder={activeIndentLang === "systemverilog" ? "e.g. begin class module" : "e.g. {"}
+                    />
+                    <span className="text-[10px] text-slate-500">
+                      Words that trigger an indentation increase on the following lines.
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-400">
+                      Decrease Indent Keywords (space separated)
+                    </label>
+                    <textarea
+                      value={
+                        activeIndentLang === "systemverilog"
+                          ? settings.svDecreaseIndentKeywords ?? defaultEditorSettings.svDecreaseIndentKeywords
+                          : settings.cDecreaseIndentKeywords ?? defaultEditorSettings.cDecreaseIndentKeywords
+                      }
+                      onChange={(e) =>
+                        handleChange(
+                          activeIndentLang === "systemverilog" ? "svDecreaseIndentKeywords" : "cDecreaseIndentKeywords",
+                          e.target.value
+                        )
+                      }
+                      className="bg-[#121214] border border-white/10 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 font-mono"
+                      rows={3}
+                      placeholder={activeIndentLang === "systemverilog" ? "e.g. end endclass endmodule" : "e.g. }"}
+                    />
+                    <span className="text-[10px] text-slate-500">
+                      Words that trigger an indentation decrease for their own line.
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-400">
+                      Indent Next Line Keywords (space separated)
+                    </label>
+                    <textarea
+                      value={
+                        activeIndentLang === "systemverilog"
+                          ? settings.svIndentNextLineKeywords ?? defaultEditorSettings.svIndentNextLineKeywords
+                          : settings.cIndentNextLineKeywords ?? defaultEditorSettings.cIndentNextLineKeywords
+                      }
+                      onChange={(e) =>
+                        handleChange(
+                          activeIndentLang === "systemverilog" ? "svIndentNextLineKeywords" : "cIndentNextLineKeywords",
+                          e.target.value
+                        )
+                      }
+                      className="bg-[#121214] border border-white/10 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 font-mono"
+                      rows={3}
+                      placeholder={activeIndentLang === "systemverilog" ? "e.g. if else always" : "e.g. if else for"}
+                    />
+                    <span className="text-[10px] text-slate-500">
+                      Words that trigger an indentation increase ONLY for the immediately following line.
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/5">

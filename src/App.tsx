@@ -634,7 +634,7 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
       insertSpaces: editorSettings.insertSpaces,
       useTabStops: editorSettings.useTabStops,
       detectIndentation: false,
-      autoIndent: "full",
+      autoIndent: editorSettings.autoIndent === false ? "none" : "advanced",
       formatOnType: true,
       acceptSuggestionOnEnter: "smart",
       wordWrap: editorSettings.wordWrap,
@@ -714,12 +714,42 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
     }
 
 
-    const incPattern = /^.*(?:^|\s)(begin|class|module|generate|function|task|case|casex|casez|specify|table|sequence|property|clocking|group|package|interface)\b(?:(?!\b(end|endclass|endmodule|endgenerate|endfunction|endtask|endcase|endspecify|endtable|endsequence|endproperty|endclocking|endgroup|endpackage|endinterface)\b).)*$/;
-    const decPattern = /^\s*(end|endclass|endmodule|endgenerate|endfunction|endtask|endcase|endspecify|endtable|endsequence|endproperty|endclocking|endgroup|endpackage|endinterface)\b/;
+    const getKeywords = (val: any, defaultVal: any): string[] => {
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string') return val.split(/\s+/).filter(Boolean);
+      if (typeof defaultVal === 'string') return defaultVal.split(/\s+/).filter(Boolean);
+      if (Array.isArray(defaultVal)) return defaultVal;
+      return [];
+    };
+
+    let incKeywords = getKeywords(editorSettings.svIncreaseIndentKeywords, defaultEditorSettings.svIncreaseIndentKeywords);
+    let decKeywords = getKeywords(editorSettings.svDecreaseIndentKeywords, defaultEditorSettings.svDecreaseIndentKeywords);
+    let nextLineKeywords = getKeywords(editorSettings.svIndentNextLineKeywords, defaultEditorSettings.svIndentNextLineKeywords);
+
+    let incPatternStr = `^.*(?:^|\\s)(${incKeywords.join('|')})\\b(?:(?!\\b(${decKeywords.join('|')})\\b).)*$`;
+    let decPatternStr = `^\\s*(${decKeywords.join('|')})\\b`;
+    let nextLinePatternStr = `^\\s*(?:${nextLineKeywords.join('|')})\\b(?:(?!\\b(?:${incKeywords.join('|')}|${decKeywords.join('|')})\\b|;).)*$`;
+
+    let incPattern = /^.*(?:^|\s)(begin|class|module|generate|function|task|case|casex|casez|specify|table|sequence|property|clocking|group|package|interface)\b(?:(?!\b(end|endclass|endmodule|endgenerate|endfunction|endtask|endcase|endspecify|endtable|endsequence|endproperty|endclocking|endgroup|endpackage|endinterface)\b).)*$/;
+    let decPattern = /^\s*(end|endclass|endmodule|endgenerate|endfunction|endtask|endcase|endspecify|endtable|endsequence|endproperty|endclocking|endgroup|endpackage|endinterface)\b/;
+    let indentNextLinePattern = /^\s*(?:if|else|always(?:_ff|_comb|_latch)?|initial|for|while|do|foreach)\b(?:(?!\b(?:begin|end)\b|;).)*$/;
+
+    try {
+      if (incKeywords.length > 0 && decKeywords.length > 0) {
+        incPattern = new RegExp(incPatternStr);
+        decPattern = new RegExp(decPatternStr);
+      }
+      if (nextLineKeywords.length > 0) {
+        indentNextLinePattern = new RegExp(nextLinePatternStr);
+      }
+    } catch (e) {
+      console.error("Invalid indentation regex pattern generated from settings", e);
+    }
 
     const svIndentRules = {
       increaseIndentPattern: incPattern,
-      decreaseIndentPattern: decPattern
+      decreaseIndentPattern: decPattern,
+      indentNextLinePattern: indentNextLinePattern
     };
 
     const svLanguageConfig: any = {
@@ -751,13 +781,86 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
         {
           beforeText: incPattern,
           action: { indentAction: monaco.languages.IndentAction.Indent }
+        },
+        {
+          beforeText: indentNextLinePattern,
+          action: { indentAction: monaco.languages.IndentAction.Indent }
         }
       ]
     };
 
     monaco.languages.setLanguageConfiguration("systemverilog", svLanguageConfig);
     monaco.languages.setLanguageConfiguration("verilog", svLanguageConfig);
-  }, []);
+
+    // C/C++ Config
+    let cIncKeywords = getKeywords(editorSettings.cIncreaseIndentKeywords, defaultEditorSettings.cIncreaseIndentKeywords);
+    let cDecKeywords = getKeywords(editorSettings.cDecreaseIndentKeywords, defaultEditorSettings.cDecreaseIndentKeywords);
+    let cNextLineKeywords = getKeywords(editorSettings.cIndentNextLineKeywords, defaultEditorSettings.cIndentNextLineKeywords);
+
+    // Default basic C/C++ patterns
+    let cIncPattern = /^.*\{[^}"']*$/;
+    let cDecPattern = /^\s*\}/;
+    let cIndentNextLinePattern = /^\s*(?:if|else|for|while|do)\b(?:(?!\b(?:\{)\b|;).)*$/;
+
+    // Use keywords if they aren't '{' or '}' which requires regex escaping, though we'll make a simple escape
+    const escapeRegExp = (string: string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    try {
+      if (cIncKeywords.length > 0 && cDecKeywords.length > 0) {
+        cIncPattern = new RegExp(`^.*(?:^|\\s)(${cIncKeywords.map(escapeRegExp).join('|')})(?:(?!(${cDecKeywords.map(escapeRegExp).join('|')})).)*$`);
+        cDecPattern = new RegExp(`^\\s*(${cDecKeywords.map(escapeRegExp).join('|')})`);
+      }
+      if (cNextLineKeywords.length > 0) {
+        cIndentNextLinePattern = new RegExp(`^\\s*(?:${cNextLineKeywords.map(escapeRegExp).join('|')})\\b(?:(?!(?:\\{|;)).)*$`);
+      }
+    } catch (e) {
+      console.error("Invalid indentation regex pattern generated from C/C++ settings", e);
+    }
+
+    const cLanguageConfig: any = {
+      comments: {
+        lineComment: "//",
+        blockComment: ["/*", "*/"]
+      },
+      brackets: [
+        ["{", "}"],
+        ["[", "]"],
+        ["(", ")"]
+      ],
+      autoClosingPairs: [
+        { open: "[", close: "]" },
+        { open: "{", close: "}" },
+        { open: "(", close: ")" },
+        { open: "'", close: "'", notIn: ["string", "comment"] },
+        { open: '"', close: '"', notIn: ["string"] }
+      ],
+      surroundingPairs: [
+        { open: "{", close: "}" },
+        { open: "[", close: "]" },
+        { open: "(", close: ")" },
+        { open: '"', close: '"' },
+        { open: "'", close: "'" }
+      ],
+      indentationRules: {
+        increaseIndentPattern: cIncPattern,
+        decreaseIndentPattern: cDecPattern,
+        indentNextLinePattern: cIndentNextLinePattern
+      },
+      onEnterRules: [
+        {
+          beforeText: cIncPattern,
+          action: { indentAction: monaco.languages.IndentAction.Indent }
+        },
+        {
+          beforeText: cIndentNextLinePattern,
+          action: { indentAction: monaco.languages.IndentAction.Indent }
+        }
+      ]
+    };
+
+    monaco.languages.setLanguageConfiguration("c", cLanguageConfig);
+    monaco.languages.setLanguageConfiguration("cpp", cLanguageConfig);
+  }, [editorSettings]);
 
   useEffect(() => {
     if (monaco) {

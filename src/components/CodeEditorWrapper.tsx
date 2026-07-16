@@ -47,6 +47,7 @@ export function CodeEditorWrapper({
   // Track when fileContent actually changes from props vs internal
   const lastPropFileContent = useRef(fileContent);
   const recentUserEditsRef = useRef<Set<string>>(new Set());
+  const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
 
   useEffect(() => {
     recentUserEditsRef.current.clear();
@@ -251,6 +252,30 @@ export function CodeEditorWrapper({
           }
         }
       });
+
+      editor.onDidChangeCursorPosition((e: any) => {
+        let visualColumn = e.position.column;
+        const model = editor.getModel();
+        if (model) {
+          const tabSize = model.getOptions().tabSize || 4;
+          const lineContent = model.getLineContent(e.position.lineNumber);
+          const textBeforeCursor = lineContent.substring(0, e.position.column - 1);
+          
+          visualColumn = 1;
+          for (let i = 0; i < textBeforeCursor.length; i++) {
+            if (textBeforeCursor[i] === '\t') {
+              visualColumn += tabSize - ((visualColumn - 1) % tabSize);
+            } else {
+              visualColumn++;
+            }
+          }
+        }
+
+        setCursorPosition({
+          lineNumber: e.position.lineNumber,
+          column: visualColumn
+        });
+      });
     },
     [handleEditorDidMount, setBreakpoints],
   );
@@ -268,77 +293,87 @@ export function CodeEditorWrapper({
   }, [activeFile]);
 
   return (
-    <Editor
-      height="100%"
-      width="100%"
-      theme={editorTheme}
-      onMount={handleMount}
-      path={filesData[activeFile] ? `${activeFile}/${filesData[activeFile].name}` : activeFile}
-      language={
-        ["sv", "v", "verilog"].includes(
-          filesData[activeFile]?.type?.toLowerCase() || "",
-        )
-          ? "systemverilog"
-          : ["tcl", "sdc"].includes(
-                filesData[activeFile]?.type?.toLowerCase() || "",
-              )
-            ? "tcl"
-            : ["makefile", "mak", "mk", "template"].includes(
-                  filesData[activeFile]?.type?.toLowerCase() || "",
-                ) ||
-                (filesData[activeFile]?.name || "").toLowerCase() ===
-                  "makefile" ||
-                (filesData[activeFile]?.name || "")
-                  .toLowerCase()
-                  .includes("makefile")
-              ? "makefile"
-              : ["c", "h"].includes(
+    <div className="flex flex-col h-full w-full">
+      <div className="flex-1 min-h-0">
+        <Editor
+          height="100%"
+          width="100%"
+          theme={editorTheme}
+          onMount={handleMount}
+          path={filesData[activeFile] ? `${activeFile}/${filesData[activeFile].name}` : activeFile}
+          language={
+            ["sv"].includes(
+              filesData[activeFile]?.type?.toLowerCase() || "",
+            )
+              ? "systemverilog"
+              : ["v", "verilog"].includes(
                     filesData[activeFile]?.type?.toLowerCase() || "",
                   )
-                ? "c"
-                : ["cpp", "cc", "cxx", "hpp", "hh", "hxx"].includes(
+                ? "verilog"
+                : ["tcl", "sdc"].includes(
+                    filesData[activeFile]?.type?.toLowerCase() || "",
+                  )
+                ? "tcl"
+                : ["makefile", "mak", "mk", "template"].includes(
                       filesData[activeFile]?.type?.toLowerCase() || "",
-                    )
-                  ? "cpp"
-                  : ["ts", "tsx"].includes(
+                    ) ||
+                    (filesData[activeFile]?.name || "").toLowerCase() ===
+                      "makefile" ||
+                    (filesData[activeFile]?.name || "")
+                      .toLowerCase()
+                      .includes("makefile")
+                  ? "makefile"
+                  : ["c", "h"].includes(
                         filesData[activeFile]?.type?.toLowerCase() || "",
                       )
-                    ? "typescript"
-                    : ["js", "jsx"].includes(
+                    ? "c"
+                    : ["cpp", "cc", "cxx", "hpp", "hh", "hxx"].includes(
                           filesData[activeFile]?.type?.toLowerCase() || "",
                         )
-                      ? "javascript"
-                      : ["json"].includes(
+                      ? "cpp"
+                      : ["ts", "tsx"].includes(
                             filesData[activeFile]?.type?.toLowerCase() || "",
                           )
-                        ? "json"
-                        : ["md", "markdown"].includes(
+                        ? "typescript"
+                        : ["js", "jsx"].includes(
                               filesData[activeFile]?.type?.toLowerCase() || "",
                             )
-                          ? "markdown"
-                          : ["css"].includes(
-                                filesData[activeFile]?.type?.toLowerCase() ||
-                                  "",
+                          ? "javascript"
+                          : ["json"].includes(
+                                filesData[activeFile]?.type?.toLowerCase() || "",
                               )
-                            ? "css"
-                            : ["html"].includes(
-                                  filesData[activeFile]?.type?.toLowerCase() ||
-                                    "",
+                            ? "json"
+                            : ["md", "markdown"].includes(
+                                  filesData[activeFile]?.type?.toLowerCase() || "",
                                 )
-                              ? "html"
-                              : ["sh", "bash"].includes(
-                                    filesData[
-                                      activeFile
-                                    ]?.type?.toLowerCase() || "",
+                              ? "markdown"
+                              : ["css"].includes(
+                                    filesData[activeFile]?.type?.toLowerCase() ||
+                                      "",
                                   )
-                                ? "shell"
-                                : "plaintext"
-      }
-      beforeMount={handleEditorBeforeMount}
-
-      value={undefined}
-      onChange={onChange}
-      options={editorOptions}
-    />
+                                ? "css"
+                                : ["html"].includes(
+                                      filesData[activeFile]?.type?.toLowerCase() ||
+                                        "",
+                                    )
+                                  ? "html"
+                                  : ["sh", "bash"].includes(
+                                        filesData[
+                                          activeFile
+                                        ]?.type?.toLowerCase() || "",
+                                      )
+                                    ? "shell"
+                                    : "plaintext"
+          }
+          beforeMount={handleEditorBeforeMount}
+          value={undefined}
+          onChange={onChange}
+          options={editorOptions}
+        />
+      </div>
+      <div className="h-6 flex items-center justify-end px-4 bg-[#1e1e1e] border-t border-black/20 text-xs text-slate-400 font-mono select-none">
+        Ln {cursorPosition.lineNumber}, Col {cursorPosition.column}
+      </div>
+    </div>
   );
 }
