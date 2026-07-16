@@ -103,34 +103,45 @@ export function WaveformViewer({ vcd, viewState, onViewStateChange, filesData }:
 
   useEffect(() => {
     const finalTracks: TrackConfig[] = [];
-    const prevTracksMap = new Map<string, TrackConfig>();
     
-    (viewState?.tracks || tracks).forEach(t => {
-       const coreId = t.uniqueId.replace(/_\d+$/, ''); 
-       prevTracksMap.set(coreId, t);
+    // Build a map of NEW signals by stable key (module, name, width)
+    const newSignalsByStableKey = new Map<string, any>();
+    vcd.signals.forEach(s => {
+        const stableKey = `${s.module}::${s.name}::${s.width}`;
+        newSignalsByStableKey.set(stableKey, s);
     });
 
-    const newSignalsSet = new Set(vcd.signals.map(s => `${s.id}_${s.name}_${s.module}`));
+    const handledNewCoreIds = new Set<string>();
 
     (viewState?.tracks || tracks).forEach(t => {
-       const coreId = t.uniqueId.replace(/_\d+$/, '');
-       if (newSignalsSet.has(coreId)) {
-           const newSig = vcd.signals.find(s => `${s.id}_${s.name}_${s.module}` === coreId);
-           if (newSig) finalTracks.push({ ...t, uniqueId: coreId, signal: newSig });
+       const stableKey = `${t.signal.module}::${t.signal.name}::${t.signal.width}`;
+       const newSig = newSignalsByStableKey.get(stableKey);
+       
+       if (newSig) {
+           const newCoreId = `${newSig.id}_${newSig.name}_${newSig.module}`;
+           const suffixMatch = t.uniqueId.match(/(_\d+)$/);
+           const suffix = suffixMatch ? suffixMatch[1] : '';
+           const newUniqueId = newCoreId + suffix;
+           
+           finalTracks.push({
+               ...t,
+               uniqueId: newUniqueId,
+               signal: newSig
+           });
+           handledNewCoreIds.add(newCoreId);
        }
     });
 
     vcd.signals.forEach(s => {
        const coreId = `${s.id}_${s.name}_${s.module}`;
-       if (!prevTracksMap.has(coreId)) {
-           const newTrack = {
+       if (!handledNewCoreIds.has(coreId)) {
+           finalTracks.push({
               uniqueId: coreId,
               signal: s,
               format: s.width > 1 ? 'hex' as const : 'bin' as const,
               isHidden: true
-           };
-           finalTracks.push(newTrack);
-           prevTracksMap.set(coreId, newTrack);
+           });
+           handledNewCoreIds.add(coreId);
        }
     });
 
