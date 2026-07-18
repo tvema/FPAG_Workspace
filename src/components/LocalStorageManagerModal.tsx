@@ -28,6 +28,20 @@ export function LocalStorageManagerModal({ isOpen, onClose }: LocalStorageManage
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [subItems, setSubItems] = useState<StorageItem[]>([]);
+  const [projectsMap, setProjectsMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(res => res.json())
+      .then(data => {
+         const map: Record<string, string> = {};
+         data.forEach((p: any) => {
+            map[p.id] = p.name;
+         });
+         setProjectsMap(map);
+      })
+      .catch(console.error);
+  }, []);
 
   const calculateSubStorage = (key: string) => {
     try {
@@ -274,7 +288,7 @@ export function LocalStorageManagerModal({ isOpen, onClose }: LocalStorageManage
           >
             <option value="all">All Projects</option>
             {allProjectIds.map(pid => (
-              <option key={pid} value={pid}>{pid}</option>
+              <option key={pid} value={pid}>{projectsMap[pid] || pid}</option>
             ))}
             <option value="none">No Project ID</option>
           </select>
@@ -351,8 +365,8 @@ export function LocalStorageManagerModal({ isOpen, onClose }: LocalStorageManage
                             </span>
                           )}
                           {item.projectId && (
-                            <span className="text-[10px] text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-0.5 rounded w-fit">
-                              {item.projectId}
+                            <span className="text-[10px] text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-0.5 rounded w-fit" title={item.projectId}>
+                              {projectsMap[item.projectId] || item.projectId}
                             </span>
                           )}
                         </div>
