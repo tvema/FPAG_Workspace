@@ -47,6 +47,7 @@ export function CodeEditorWrapper({
   // Track when fileContent actually changes from props vs internal
   const lastPropFileContent = useRef(fileContent);
   const recentUserEditsRef = useRef<Set<string>>(new Set());
+  const isRestoringViewStateRef = useRef<boolean>(false);
   const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
 
   useEffect(() => {
@@ -85,9 +86,7 @@ export function CodeEditorWrapper({
   // Save view state on unmount
   useEffect(() => {
     return () => {
-      if (editorRef.current && activeFileChangeRef.current) {
-        editorViewStates[activeFileChangeRef.current] =
-          editorRef.current.saveViewState();
+      if (activeFileChangeRef.current) {
         try {
           localStorage.setItem(
             LOCAL_STORAGE_KEY,
@@ -124,8 +123,18 @@ export function CodeEditorWrapper({
 
   useEffect(() => {
     if (activeFile !== activeFileChangeRef.current) {
+      if (activeFileChangeRef.current) {
+        try {
+          localStorage.setItem(
+            LOCAL_STORAGE_KEY,
+            JSON.stringify(editorViewStates),
+          );
+        } catch (e) {}
+      }
+
       activeFileChangeRef.current = activeFile;
       if (editorRef.current) {
+        isRestoringViewStateRef.current = true;
         editorRef.current.setValue(fileContent);
         if (editorViewStates[activeFile]) {
           // Add a small delay to ensure value is fully applied before restoring state
@@ -134,9 +143,11 @@ export function CodeEditorWrapper({
                 editorRef.current.restoreViewState(editorViewStates[activeFile]);
                 updateBreakpoints();
             }
+            isRestoringViewStateRef.current = false;
           }, 0);
         } else {
             updateBreakpoints();
+            isRestoringViewStateRef.current = false;
         }
       }
     } else if (editorRef.current) {
@@ -240,14 +251,20 @@ export function CodeEditorWrapper({
       });
 
       editor.onDidScrollChange(() => {
-        if (activeFileRef.current && editorRef.current) {
-          editorViewStates[activeFileRef.current] = editorRef.current.saveViewState();
+        if (activeFileRef.current && editorRef.current && !isRestoringViewStateRef.current) {
+          const model = editorRef.current.getModel();
+          if (model && model.uri.path.includes(activeFileRef.current)) {
+            editorViewStates[activeFileRef.current] = editorRef.current.saveViewState();
+          }
         }
       });
 
       editor.onDidChangeCursorPosition((e: any) => {
-        if (activeFileRef.current && editorRef.current) {
-          editorViewStates[activeFileRef.current] = editorRef.current.saveViewState();
+        if (activeFileRef.current && editorRef.current && !isRestoringViewStateRef.current) {
+          const model = editorRef.current.getModel();
+          if (model && model.uri.path.includes(activeFileRef.current)) {
+            editorViewStates[activeFileRef.current] = editorRef.current.saveViewState();
+          }
         }
         let visualColumn = e.position.column;
         const model = editor.getModel();

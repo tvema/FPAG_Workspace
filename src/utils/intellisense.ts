@@ -18,6 +18,15 @@ export function registerIntellisense(monaco: any) {
   if (isRegistered || !monaco) return;
   isRegistered = true;
 
+  monaco.editor.registerCommand('verilog.retypeLastChar', (accessor: any, char: string) => {
+    const editors = monaco.editor.getEditors();
+    const activeEditor = editors.find((e: any) => e.hasTextFocus() || e.hasWidgetFocus()) || editors[0];
+    if (activeEditor) {
+      activeEditor.trigger('keyboard', 'deleteLeft', {});
+      activeEditor.trigger('keyboard', 'type', { text: char });
+    }
+  });
+
   const cProvider = {
     provideCompletionItems: (model: any, position: any) => {
       const wordInfo = model.getWordUntilPosition(position);
@@ -63,11 +72,20 @@ export function registerIntellisense(monaco: any) {
       const suggestions: any[] = [];
 
       keywords.forEach((k) => {
+        let command = undefined;
+        if (/^(end|endclass|endmodule|endgenerate|endfunction|endtask|endcase|endspecify|endtable|endsequence|endproperty|endclocking|endgroup|endpackage|endinterface)$/.test(k)) {
+          command = {
+            id: 'verilog.retypeLastChar',
+            title: 'Retype last char',
+            arguments: [k.slice(-1)]
+          };
+        }
         suggestions.push({
           label: k,
           kind: monaco.languages.CompletionItemKind.Keyword,
           insertText: k,
-          range: range
+          range: range,
+          command: command
         });
       });
 

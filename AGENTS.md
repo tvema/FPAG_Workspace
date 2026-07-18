@@ -55,3 +55,7 @@ It is specifically built for working with Verilog and Intel Quartus Prime files.
 
 13. **Clean Up Temporary Files**:
    - ALWAYS delete temporary diagnostic, debugging, or patching scripts (e.g., `patch_*.py`, `test_*.js`, etc.) from the workspace once the task is complete to keep the repository clean.
+14. **Monaco Editor Autocomplete/IntelliSense Command Execution**:
+   - When implementing custom commands triggered by autocomplete suggestions (like `verilog.retypeLastChar` which simulates re-typing the last character of a selected suggestion to trigger formatting/indentation), you **MUST** run the triggers synchronously without `setTimeout`.
+   - You **MUST** use `'keyboard'` as the source string for `editor.trigger` (e.g. `editor.trigger('keyboard', 'deleteLeft', {})` and `editor.trigger('keyboard', 'type', { text: char })`).
+   - If you use `setTimeout` or `'intellisense'` as the trigger source, Monaco Editor will ignore the command or it will fail to adjust indentation because it gets lost in the state machine or race conditions.
