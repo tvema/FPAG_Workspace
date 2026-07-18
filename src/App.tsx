@@ -170,7 +170,11 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem("editorSettings", JSON.stringify(editorSettings));
+    try {
+      localStorage.setItem("editorSettings", JSON.stringify(editorSettings));
+    } catch (e) {
+      console.error("Failed to save editorSettings", e);
+    }
   }, [editorSettings]);
 
   const editorTheme = editorSettings.theme;
@@ -1175,7 +1179,11 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
   // Save active project
   useEffect(() => {
     if (activeProject) {
-      localStorage.setItem("last_active_project", activeProject);
+      try {
+        localStorage.setItem("last_active_project", activeProject);
+      } catch (e) {
+        console.error("Failed to save last_active_project", e);
+      }
     }
   }, [activeProject]);
 
@@ -1357,10 +1365,14 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
       chatMode,
       chatInputs
     };
-    localStorage.setItem(
-      `workspace_config_${activeProject}`,
-      JSON.stringify(stateObj),
-    );
+    try {
+      localStorage.setItem(
+        `workspace_config_${activeProject}`,
+        JSON.stringify(stateObj),
+      );
+    } catch (e) {
+      console.error("Failed to save workspace config", e);
+    }
   }, [
     activeProject,
     openedTabs,

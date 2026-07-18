@@ -312,13 +312,24 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
     return {};
   });
 
-  useEffect(() => {
-    localStorage.setItem('ai_chat_history', JSON.stringify(messagesMap));
-  }, [messagesMap]);
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
   const [errorMap, setErrorMap] = useState<Record<string, string | null>>({});
 
   const actualTargetId = chatMode === 'project' ? `_project_global_${activeProjectId || 'default'}` : activeFileId;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ai_chat_history', JSON.stringify(messagesMap));
+    } catch (e) {
+      console.error("Failed to save chat history to localStorage", e);
+      if (actualTargetId) {
+        setErrorMap(prev => ({ 
+          ...prev, 
+          [actualTargetId]: "Local storage quota exceeded. The chat history is too large to be saved. Please clear the chat." 
+        }));
+      }
+    }
+  }, [messagesMap, actualTargetId]);
 
   const messages = actualTargetId ? (messagesMap[actualTargetId] || []) : [];
   const isLoading = actualTargetId ? (loadingMap[actualTargetId] || false) : false;
@@ -390,19 +401,19 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
   };
 
   useEffect(() => {
-    localStorage.setItem('gemini_api_key', apiKey);
+    try { localStorage.setItem('gemini_api_key', apiKey); } catch (e) {}
   }, [apiKey]);
 
   useEffect(() => {
-    localStorage.setItem('ai_provider', provider);
+    try { localStorage.setItem('ai_provider', provider); } catch (e) {}
   }, [provider]);
 
   useEffect(() => {
-    localStorage.setItem('gemini_http_proxy', proxy);
+    try { localStorage.setItem('gemini_http_proxy', proxy); } catch (e) {}
   }, [proxy]);
 
   useEffect(() => {
-    localStorage.setItem('gemini_model', model);
+    try { localStorage.setItem('gemini_model', model); } catch (e) {}
   }, [model]);
 
   useEffect(() => {

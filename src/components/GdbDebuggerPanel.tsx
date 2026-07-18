@@ -42,11 +42,11 @@ export function GdbDebuggerPanel({
   });
 
   useEffect(() => {
-    localStorage.setItem("gdb_panel_active_tab", activeTab);
+    try { localStorage.setItem("gdb_panel_active_tab", activeTab); } catch(e) {}
   }, [activeTab]);
 
   useEffect(() => {
-    localStorage.setItem("gdb_panel_console_open", JSON.stringify(isConsoleOpen));
+    try { localStorage.setItem("gdb_panel_console_open", JSON.stringify(isConsoleOpen)); } catch(e) {}
   }, [isConsoleOpen]);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [commandInput, setCommandInput] = useState("");
