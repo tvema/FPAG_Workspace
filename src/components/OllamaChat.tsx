@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Bot, User, Settings, Loader2, AlertCircle, Save, GitMerge } from 'lucide-react';
+import { Send, Bot, User, Settings, Loader2, AlertCircle, Save, GitMerge, X, Database } from 'lucide-react';
 import { parseVerilog } from '../utils/verilogParser';
 import debounce from 'lodash.debounce';
+import { LocalStorageManagerModal } from './LocalStorageManagerModal';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -336,6 +337,7 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
   const error = actualTargetId ? (errorMap[actualTargetId] || null) : null;
 
   const [showSettings, setShowSettings] = useState(false);
+  const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
   
   // Settings
   const [provider, setProvider] = useState(() => localStorage.getItem('ai_provider') || 'gemini_server');
@@ -657,6 +659,13 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
         </div>
         <div className="flex items-center gap-2">
           <button 
+            onClick={() => setIsStorageModalOpen(true)}
+            className="p-1.5 rounded-md transition-colors text-slate-400 hover:text-emerald-400 hover:bg-emerald-400/10"
+            title="Manage Local Storage"
+          >
+            <Database className="w-4 h-4" />
+          </button>
+          <button 
             onClick={() => setShowSettings(!showSettings)}
             className={`p-1.5 rounded-md transition-colors ${showSettings ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}
           >
@@ -769,9 +778,15 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
           </div>
         )}
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-lg flex items-start gap-2">
+          <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-lg flex items-start gap-2 relative">
             <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span className="whitespace-pre-wrap">{error}</span>
+            <span className="whitespace-pre-wrap pr-4">{error}</span>
+            <button 
+              onClick={() => setError(null, actualTargetId)}
+              className="absolute right-2 top-2 p-1 hover:bg-red-500/20 rounded text-red-400 opacity-70 hover:opacity-100 transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </button>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -784,6 +799,11 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
           Powered by Google Gemini.
         </div>
       </div>
+      
+      <LocalStorageManagerModal 
+        isOpen={isStorageModalOpen} 
+        onClose={() => setIsStorageModalOpen(false)} 
+      />
     </div>
   );
 }
