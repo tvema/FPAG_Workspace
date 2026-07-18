@@ -14,25 +14,6 @@ const cKeywords = [
   "auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum", "extern", "float", "for", "goto", "if", "int", "long", "register", "return", "short", "signed", "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned", "void", "volatile", "while", "class", "namespace", "public", "private", "protected", "template", "typename", "this", "new", "delete", "inline", "virtual", "friend", "try", "catch", "throw", "bool", "true", "false", "constexpr", "nullptr", "decltype", "noexcept", "static_assert"
 ];
 
-function getWordSuggestions(text: string, currentWord: string, keywordsToExclude: string[], range: any, monaco: any) {
-  const matches = text.match(/\b[a-zA-Z_]\w*\b/g);
-  const suggestions: any[] = [];
-  if (matches) {
-    const uniqueWords = Array.from(new Set(matches));
-    uniqueWords.forEach((w) => {
-      if (!keywordsToExclude.includes(w) && w !== currentWord) {
-        suggestions.push({
-          label: w,
-          kind: monaco.languages.CompletionItemKind.Text,
-          insertText: w,
-          range: range
-        });
-      }
-    });
-  }
-  return suggestions;
-}
-
 export function registerIntellisense(monaco: any) {
   if (isRegistered || !monaco) return;
   isRegistered = true;
@@ -58,8 +39,7 @@ export function registerIntellisense(monaco: any) {
         });
       });
 
-      const wordSuggestions = getWordSuggestions(model.getValue(), wordInfo.word, cKeywords, range, monaco);
-      return { suggestions: [...suggestions, ...wordSuggestions] };
+      return { suggestions: suggestions };
     }
   };
 
@@ -83,21 +63,10 @@ export function registerIntellisense(monaco: any) {
       const suggestions: any[] = [];
 
       keywords.forEach((k) => {
-        let insertText = k;
-        let command = undefined;
-        if (/^(end|endclass|endmodule|endgenerate|endfunction|endtask|endcase|endspecify|endtable|endsequence|endproperty|endclocking|endgroup|endpackage|endinterface)$/.test(k)) {
-          insertText = k.slice(0, -1);
-          command = {
-            id: 'type',
-            title: 'type',
-            arguments: [{ text: k.slice(-1) }]
-          };
-        }
         suggestions.push({
           label: k,
           kind: monaco.languages.CompletionItemKind.Keyword,
-          insertText: insertText,
-          command: command,
+          insertText: k,
           range: range
         });
       });
@@ -139,12 +108,10 @@ export function registerIntellisense(monaco: any) {
         console.error("Intellisense parser error:", e);
       }
 
-      const wordSuggestions = getWordSuggestions(model.getValue(), wordInfo.word, keywords, range, monaco);
-      
       const seenLabels = new Set();
       const finalSuggestions: any[] = [];
       
-      for (const item of [...suggestions, ...wordSuggestions]) {
+      for (const item of suggestions) {
         if (!seenLabels.has(item.label)) {
           seenLabels.add(item.label);
           finalSuggestions.push(item);

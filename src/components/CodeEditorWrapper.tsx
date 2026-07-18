@@ -82,44 +82,27 @@ export function CodeEditorWrapper({
     }
   }, [editorOptions]);
 
-  // Save view state when activeFile changes
-  const activeFileRef = useRef(activeFile);
-
+  // Save view state on unmount
   useEffect(() => {
-    if (editorRef.current && activeFileRef.current) {
-      editorViewStates[activeFileRef.current] =
-        editorRef.current.saveViewState();
-      try {
-        localStorage.setItem(
-          LOCAL_STORAGE_KEY,
-          JSON.stringify(editorViewStates),
-        );
-      } catch (e) {
-        // ignore quota errors
-      }
-    }
-    activeFileRef.current = activeFile;
-    if (editorRef.current && editorViewStates[activeFile]) {
-      editorRef.current.restoreViewState(editorViewStates[activeFile]);
-    }
-
     return () => {
-      if (editorRef.current && activeFileRef.current) {
-        editorViewStates[activeFileRef.current] =
+      if (editorRef.current && activeFileChangeRef.current) {
+        editorViewStates[activeFileChangeRef.current] =
           editorRef.current.saveViewState();
         try {
           localStorage.setItem(
             LOCAL_STORAGE_KEY,
             JSON.stringify(editorViewStates),
           );
-        } catch (e) {
-          // ignore quota errors
-        }
+        } catch (e) {}
       }
     };
-  }, [activeFile]);
+  }, []);
 
   const activeFileChangeRef = useRef(activeFile);
+  const activeFileRef = useRef(activeFile);
+  useEffect(() => {
+    activeFileRef.current = activeFile;
+  }, [activeFile]);
 
   const updateBreakpoints = useCallback(() => {
     if (editorRef.current && monacoRef.current && breakpoints && activeFile) {
@@ -144,15 +127,18 @@ export function CodeEditorWrapper({
       activeFileChangeRef.current = activeFile;
       if (editorRef.current) {
         editorRef.current.setValue(fileContent);
-      }
-      setTimeout(() => {
-        if (editorRef.current && activeFileRef.current === activeFile) {
-          if (editorViewStates[activeFile]) {
-            editorRef.current.restoreViewState(editorViewStates[activeFile]);
-          }
-          updateBreakpoints();
+        if (editorViewStates[activeFile]) {
+          // Add a small delay to ensure value is fully applied before restoring state
+          setTimeout(() => {
+            if (editorRef.current && activeFileChangeRef.current === activeFile) {
+                editorRef.current.restoreViewState(editorViewStates[activeFile]);
+                updateBreakpoints();
+            }
+          }, 0);
+        } else {
+            updateBreakpoints();
         }
-      }, 100);
+      }
     } else if (editorRef.current) {
       if (fileContent !== lastPropFileContent.current) {
         lastPropFileContent.current = fileContent;
@@ -253,7 +239,16 @@ export function CodeEditorWrapper({
         }
       });
 
+      editor.onDidScrollChange(() => {
+        if (activeFileRef.current && editorRef.current) {
+          editorViewStates[activeFileRef.current] = editorRef.current.saveViewState();
+        }
+      });
+
       editor.onDidChangeCursorPosition((e: any) => {
+        if (activeFileRef.current && editorRef.current) {
+          editorViewStates[activeFileRef.current] = editorRef.current.saveViewState();
+        }
         let visualColumn = e.position.column;
         const model = editor.getModel();
         if (model) {

@@ -123,7 +123,7 @@ export function parseVCD(vcdText: string): VCDData {
   const result = { timescale, signals, data, maxTime };
   vcdCache.set(vcdText, result);
   
-  if (vcdCache.size > 10) {
+  if (vcdCache.size > 2) {
       const firstKey = vcdCache.keys().next().value;
       if (firstKey) vcdCache.delete(firstKey);
   }
