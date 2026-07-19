@@ -1,11 +1,11 @@
 import React from 'react';
-import { ChevronRight, ChevronDown, FolderOpen, Box, MoreVertical, FilePlus, FolderPlus, FileCode2, Upload, Trash2, Link, Type, Hash, ArrowLeftRight, ArrowRightToLine, ArrowRightFromLine, Settings2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, FolderOpen, Box, MoreVertical, FilePlus, FolderPlus, FileCode2, Upload, Trash2, Link, Type, Hash, ArrowLeftRight, ArrowRightToLine, ArrowRightFromLine, Settings2, Sigma } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
 export type TreeNode = {
   name: string;
   path: string;
-  type: 'file' | 'folder' | 'module' | 'wire' | 'reg' | 'logic' | 'input' | 'output' | 'inout';
+  type: 'file' | 'folder' | 'module' | 'wire' | 'reg' | 'logic' | 'input' | 'output' | 'inout' | 'parameter' | 'localparam';
   fileId?: string;
   content?: string;
   lineStart?: number;
@@ -263,6 +263,8 @@ export function ProjectTree({
                     <div className="w-3.5 h-3.5 shrink-0 flex items-center justify-center text-[10px] font-bold text-rose-400 bg-rose-400/10 rounded">r</div>
                  ) : node.type === 'wire' ? (
                     <div className="w-3.5 h-3.5 shrink-0 flex items-center justify-center text-[10px] font-bold text-cyan-400 bg-cyan-400/10 rounded">w</div>
+                 ) : node.type === 'parameter' || node.type === 'localparam' ? (
+                    <Sigma className="w-3.5 h-3.5 shrink-0 text-fuchsia-400" />
                  ) : node.type === 'logic' ? (
                     <div className="w-3.5 h-3.5 shrink-0 flex items-center justify-center text-[10px] font-bold text-purple-400 bg-purple-400/10 rounded">l</div>
                  ) : (

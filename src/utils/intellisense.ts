@@ -70,7 +70,6 @@ export function registerIntellisense(monaco: any) {
       const keywords = isSv ? svKeywords : vKeywords;
 
       const suggestions: any[] = [];
-
       keywords.forEach((k) => {
         let command = undefined;
         if (/^(end|endclass|endmodule|endgenerate|endfunction|endtask|endcase|endspecify|endtable|endsequence|endproperty|endclocking|endgroup|endpackage|endinterface)$/.test(k)) {
@@ -90,10 +89,34 @@ export function registerIntellisense(monaco: any) {
       });
 
       try {
-        const text = model.getValue();
-        const modules = parseVerilog(text);
+        // Use a cached version of the AST that doesn't re-parse on every keystroke
+        // The AST will be slightly stale but it's fine for autocomplete
+        const uriString = model.uri ? model.uri.toString() : 'unknown';
+        const now = Date.now();
         
-        modules.forEach(mod => {
+        let astCache = (window as any).__verilogAstCache;
+        if (!astCache) {
+           astCache = new Map();
+           (window as any).__verilogAstCache = astCache;
+        }
+        
+        let cached = astCache.get(uriString);
+        let text = model.getValue();
+        
+        // Only re-parse at most once every 2 seconds
+        if (!cached || now - cached.timestamp > 2000) {
+            // Note: parseVerilog has its own text-based cache, but this prevents
+            // calling it on every keystroke when text changes constantly
+            cached = {
+                timestamp: now,
+                modules: parseVerilog(text)
+            };
+            astCache.set(uriString, cached);
+        }
+
+        const modules = cached.modules || [];
+        
+        modules.forEach((mod: any) => {
           suggestions.push({
             label: mod.name,
             kind: monaco.languages.CompletionItemKind.Class,
@@ -102,17 +125,17 @@ export function registerIntellisense(monaco: any) {
             range: range
           });
           
-          mod.signals.forEach(sig => {
+          mod.signals.forEach((sig: any) => {
             suggestions.push({
               label: sig.name,
-              kind: sig.ioType ? monaco.languages.CompletionItemKind.Interface : monaco.languages.CompletionItemKind.Variable,
+              kind: sig.ioType ? monaco.languages.CompletionItemKind.Interface : (sig.type === "parameter" || sig.type === "localparam" ? monaco.languages.CompletionItemKind.Constant : monaco.languages.CompletionItemKind.Variable),
               insertText: sig.name,
               detail: sig.ioType ? `${sig.ioType} ${sig.type}` : sig.type,
               range: range
             });
           });
           
-          mod.instances.forEach(inst => {
+          mod.instances.forEach((inst: any) => {
             suggestions.push({
               label: inst.name,
               kind: monaco.languages.CompletionItemKind.Field,
