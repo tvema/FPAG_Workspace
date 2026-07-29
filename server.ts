@@ -539,7 +539,7 @@ async function startServer() {
              const content = await fs.readFile(nodePath.join(exportDir, relPath), 'utf8');
              const existing = db.prepare("SELECT * FROM files WHERE project_id = ? AND path = ?").get(projectId, relPath);
              if (existing) {
-                db.prepare("UPDATE files SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(content, existing.id);
+                db.prepare("UPDATE files SET content = ? WHERE id = ?").run(content, existing.id);
              } else {
                 const id = crypto.randomUUID();
                 let type = 'verilog';
