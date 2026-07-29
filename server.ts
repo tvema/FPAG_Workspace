@@ -507,6 +507,48 @@ async function startServer() {
           }
           result.commitResult = commitOutput;
         }
+      } else if (action === 'sync_from_disk') {
+          const filesOnDisk = [];
+          async function readDir(dir, base) {
+             const entries = await fs.readdir(dir, { withFileTypes: true });
+             for (const entry of entries) {
+                if (entry.name === '.git' || entry.name === 'sim' || entry.name.endsWith('.vcd')) continue;
+                const fullPath = nodePath.join(dir, entry.name);
+                const relPath = nodePath.relative(exportDir, fullPath).replace(/\\/g, '/');
+                if (entry.isDirectory()) {
+                   await readDir(fullPath, base);
+                } else {
+                   filesOnDisk.push(relPath);
+                }
+             }
+          }
+          try {
+             await readDir(exportDir, exportDir);
+          } catch(e) {}
+          
+          const dbFiles = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as any[];
+          for (const f of dbFiles) {
+              if (f.is_link) continue;
+              if (!filesOnDisk.includes(f.path)) {
+                 db.prepare("DELETE FROM files WHERE id = ?").run(f.id);
+              }
+          }
+          
+          const crypto = await import('crypto');
+          for (const relPath of filesOnDisk) {
+             const content = await fs.readFile(nodePath.join(exportDir, relPath), 'utf8');
+             const existing = db.prepare("SELECT * FROM files WHERE project_id = ? AND path = ?").get(projectId, relPath);
+             if (existing) {
+                db.prepare("UPDATE files SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(content, existing.id);
+             } else {
+                const id = crypto.randomUUID();
+                let type = 'verilog';
+                if (relPath.endsWith('.sv')) type = 'systemverilog';
+                else if (relPath.endsWith('.c') || relPath.endsWith('.cpp') || relPath.endsWith('.h')) type = 'cpp';
+                else if (relPath.endsWith('.md')) type = 'markdown';
+                db.prepare("INSERT INTO files (id, project_id, name, path, content, type) VALUES (?, ?, ?, ?, ?, ?)").run(id, projectId, nodePath.basename(relPath), relPath, content, type);
+             }
+          }
       } else if (action === 'show') {
          if (isRepo) {
             try {

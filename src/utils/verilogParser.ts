@@ -258,7 +258,7 @@ export function parseVerilog(content: string): VerilogModule[] {
   }
   
   parseCache.set(content, modules);
-  if (parseCache.size > 5) {
+  if (parseCache.size > 50) {
       const firstKey = parseCache.keys().next().value;
       if (firstKey) parseCache.delete(firstKey);
   }

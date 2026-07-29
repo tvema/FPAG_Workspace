@@ -1,6 +1,5 @@
 import React from "react";
-import {
-  Cpu,
+import { Cpu,
   ChevronRight,
   FilePlus,
   Save,
@@ -14,8 +13,7 @@ import {
   GitMerge,
   Settings2,
   CheckCircle2,
-  Bug,
-} from "lucide-react";
+  Bug, RefreshCw, CloudDownload } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
 interface HeaderProps {
@@ -216,50 +214,49 @@ export function Header({
             </button>
           )}
 
-        <button
-          onClick={handleImportZip}
-          className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-slate-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
-        >
-          <Upload className="w-3.5 h-3.5" />
-          Import ZIP
-        </button>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer outline-none">
+              <Github className="w-3.5 h-3.5" />
+              Git / Export
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content align="end" sideOffset={8} className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[160px] z-50">
+              
+              {!gitStatus?.isRepo ? (
+                <DropdownMenu.Item onClick={() => handleGitAction("init")} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-indigo-300 hover:bg-white/5 mx-1 rounded">
+                  <Github className="w-3.5 h-3.5" /> Init Git Repo
+                </DropdownMenu.Item>
+              ) : (
+                <>
+                  <DropdownMenu.Item onClick={() => handleGitAction("add", ".")} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-emerald-300 hover:bg-white/5 mx-1 rounded">
+                    <FilePlus className="w-3.5 h-3.5" /> Git Add All
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item onClick={() => setGitCommitDialogState(true)} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-indigo-300 hover:bg-white/5 mx-1 rounded">
+                    <GitMerge className="w-3.5 h-3.5" /> Git Commit
+                  </DropdownMenu.Item>
+                </>
+              )}
+              
+              <DropdownMenu.Separator className="h-px bg-white/10 my-1 mx-1" />
+              
+              <DropdownMenu.Item onClick={() => handleGitAction("sync_from_disk")} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-amber-300 hover:bg-white/5 mx-1 rounded">
+                <RefreshCw className="w-3.5 h-3.5" /> Sync from Disk
+              </DropdownMenu.Item>
+              
+              <DropdownMenu.Separator className="h-px bg-white/10 my-1 mx-1" />
+              
+              <DropdownMenu.Item onClick={handleImportZip} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-slate-300 hover:bg-white/5 mx-1 rounded">
+                <Upload className="w-3.5 h-3.5" /> Import ZIP
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onClick={handleExportZip} disabled={isExporting} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-slate-300 hover:bg-white/5 mx-1 rounded disabled:opacity-50">
+                <Download className="w-3.5 h-3.5" /> {isExporting ? "Exporting..." : "Export to ZIP"}
+              </DropdownMenu.Item>
 
-        <button
-          onClick={handleExportZip}
-          disabled={isExporting}
-          className="text-xs bg-slate-800/50 hover:bg-slate-800 border border-white/10 text-slate-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Download className="w-3.5 h-3.5" />
-          {isExporting ? "Exporting..." : "Export to ZIP"}
-        </button>
-        {!gitStatus?.isRepo ? (
-          <button
-            onClick={() => handleGitAction("init")}
-            className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <Github className="w-3.5 h-3.5" />
-            Init Git Repo
-          </button>
-        ) : (
-          <>
-            <button
-              onClick={() => handleGitAction("add", ".")}
-              className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <FilePlus className="w-3.5 h-3.5" />
-              Git Add All
-            </button>
-            <button
-              onClick={() => {
-                setGitCommitDialogState(true);
-              }}
-              className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-md flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <GitMerge className="w-3.5 h-3.5" />
-              Git Commit
-            </button>
-          </>
-        )}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
 
         <button
           onClick={handleRunMake}

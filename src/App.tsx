@@ -1671,7 +1671,7 @@ int main(int argc, char** argv) {
   };
 
   const handleGitAction = async (
-    action: "init" | "add" | "rm" | "commit",
+    action: "init" | "add" | "rm" | "commit" | "sync_from_disk" | "show",
     path?: string,
     commitMessage?: string,
   ) => {
@@ -1693,6 +1693,10 @@ int main(int argc, char** argv) {
         }),
       });
       if (res.ok) {
+        if (action === "sync_from_disk") {
+           window.location.reload();
+           return;
+        }
         fetchGitStatus();
         const data = await res.json();
         if (action === "commit" && data.commitResult) {
