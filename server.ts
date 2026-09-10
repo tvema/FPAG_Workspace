@@ -495,7 +495,11 @@ async function startServer() {
           try {
             await fs.access(nodePath.join(exportDir, '.gitignore'));
           } catch {
-            await fs.writeFile(nodePath.join(exportDir, '.gitignore'), '*.vcd\n*.vvp\n*.out\nsim/\n', 'utf8');
+            await fs.writeFile(
+              nodePath.join(exportDir, '.gitignore'),
+              '*.vcd\n*.vvp\n*.out\n*.o\n*.obj\n*.d\n*.a\n*.so\n*.exe\nsim/\nobj_dir/\noutput_files/\ndb/\nincremental_db/\nsimulation/\n*.rpt\n*.summary\n*.smsg\n*.done\n*.jdi\n*.sof\n*.pof\n*.qws\n',
+              'utf8'
+            );
           }
 
           let commitOutput = '';
@@ -508,17 +512,109 @@ async function startServer() {
           result.commitResult = commitOutput;
         }
       } else if (action === 'sync_from_disk') {
-          const filesOnDisk = [];
-          async function readDir(dir, base) {
+          const filesOnDisk: string[] = [];
+
+          // Directories to exclude from scanning (compiled artifacts, tooling caches, etc.)
+          const IGNORED_DIRS = new Set([
+             '.git', '.vscode', '.idea', '.cache', '.clangd',
+             'sim', 'obj_dir',
+             'db', 'incremental_db', 'output_files', 'simulation', 'greybox', 'hc_output',
+             'work', 'transcript',
+             'build', 'bin', 'out', 'dist', '__pycache__', '.pytest_cache'
+          ]);
+
+          // Extensions of compiled files, logs, waveforms, reports, binaries, and temporary files
+          const IGNORED_EXTENSIONS = new Set([
+             // Waveforms & simulation dumps
+             'vcd', 'vvp', 'wlf', 'fsdb', 'fst', 'dump', 'vst',
+             // Binaries, objects, libraries, dependencies
+             'o', 'obj', 'd', 'a', 'so', 'dylib', 'dll', 'exe', 'elf', 'bin', 'out',
+             // Quartus outputs & report files
+             'rpt', 'summary', 'smsg', 'done', 'jdi', 'sof', 'pof', 'rbf', 'ttf', 'cdf', 'pin', 'chg', 'sld', 'qws', 'qdf', 'sopcinfo', 'bsf', 'dpf', 'hps_isw_handoff', 'ipinfo',
+             // Logs, backup & temporary files
+             'log', 'swp', 'swo', 'bak', 'orig', 'tmp', 'temp', 'ds_store'
+          ]);
+
+          // Known source and editable project file extensions
+          const SOURCE_EXTENSIONS = new Set([
+             // Verilog / SystemVerilog
+             'v', 'sv', 'vh', 'svh',
+             // C / C++
+             'c', 'cpp', 'cc', 'cxx', 'h', 'hpp', 'hh', 'hxx',
+             // Assembly
+             's', 'asm',
+             // FPGA / EDA constraints & scripts
+             'sdc', 'tcl', 'qsf', 'qpf', 'xdc', 'lpf',
+             // Build & Shell scripts
+             'mk', 'mak', 'sh', 'bash',
+             // Data & Memory initialization
+             'mif', 'hex', 'dat', 'csv', 'json', 'txt', 'xml', 'yaml', 'yml', 'mem',
+             // Documentation
+             'md', 'markdown'
+          ]);
+
+          const SOURCE_EXACT_NAMES = new Set([
+             'makefile', '.gitkeep', '.gitignore', 'readme', 'license'
+          ]);
+
+          async function isSourceFile(fullPath: string, fileName: string): Promise<boolean> {
+             const lowerName = fileName.toLowerCase();
+             if (lowerName === '.gitkeep' || lowerName === '.gitignore') return true;
+             if (lowerName.startsWith('.') || lowerName.endsWith('~') || (lowerName.startsWith('#') && lowerName.endsWith('#'))) {
+                return false;
+             }
+             if (lowerName === 'thumbs.db' || lowerName === '.ds_store') return false;
+
+             const ext = nodePath.extname(lowerName).replace(/^\./, '');
+             if (ext && IGNORED_EXTENSIONS.has(ext)) {
+                return false;
+             }
+
+             const isKnownSource = (ext && SOURCE_EXTENSIONS.has(ext)) || SOURCE_EXACT_NAMES.has(lowerName);
+             if (!isKnownSource) {
+                return false;
+             }
+
+             // Binary check: ensure it is text and not an ELF/binary executable
+             try {
+                const fd = await fs.open(fullPath, 'r');
+                const buf = Buffer.alloc(1024);
+                const { bytesRead } = await fd.read(buf, 0, 1024, 0);
+                await fd.close();
+                if (bytesRead > 0) {
+                   // Check for ELF header (\x7fELF)
+                   if (bytesRead >= 4 && buf[0] === 0x7f && buf[1] === 0x45 && buf[2] === 0x4c && buf[3] === 0x46) {
+                      return false;
+                   }
+                   // Check for NULL byte indicating binary content
+                   for (let i = 0; i < bytesRead; i++) {
+                      if (buf[i] === 0) return false;
+                   }
+                }
+             } catch {
+                return false;
+             }
+
+             return true;
+          }
+
+          async function readDir(dir: string, base: string) {
              const entries = await fs.readdir(dir, { withFileTypes: true });
              for (const entry of entries) {
-                if (entry.name === '.git' || entry.name === 'sim' || entry.name.endsWith('.vcd')) continue;
-                const fullPath = nodePath.join(dir, entry.name);
-                const relPath = nodePath.relative(exportDir, fullPath).replace(/\\/g, '/');
+                const entryNameLower = entry.name.toLowerCase();
                 if (entry.isDirectory()) {
+                   if (entry.name.startsWith('.') || IGNORED_DIRS.has(entryNameLower)) {
+                      continue;
+                   }
+                   const fullPath = nodePath.join(dir, entry.name);
                    await readDir(fullPath, base);
-                } else {
-                   filesOnDisk.push(relPath);
+                } else if (entry.isFile()) {
+                   const fullPath = nodePath.join(dir, entry.name);
+                   const relPath = nodePath.relative(exportDir, fullPath).replace(/\\/g, '/');
+                   
+                   if (await isSourceFile(fullPath, entry.name)) {
+                      filesOnDisk.push(relPath);
+                   }
                 }
              }
           }
@@ -542,10 +638,22 @@ async function startServer() {
                 db.prepare("UPDATE files SET content = ? WHERE id = ?").run(content, existing.id);
              } else {
                 const id = crypto.randomUUID();
-                let type = 'verilog';
-                if (relPath.endsWith('.sv')) type = 'systemverilog';
-                else if (relPath.endsWith('.c') || relPath.endsWith('.cpp') || relPath.endsWith('.h')) type = 'cpp';
-                else if (relPath.endsWith('.md')) type = 'markdown';
+                let type = 'plaintext';
+                const lower = relPath.toLowerCase();
+                const ext = nodePath.extname(lower).replace(/^\./, '');
+                const base = nodePath.basename(lower);
+                if (['v', 'vh'].includes(ext)) type = 'verilog';
+                else if (['sv', 'svh'].includes(ext)) type = 'systemverilog';
+                else if (['c', 'h'].includes(ext)) type = 'c';
+                else if (['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(ext)) type = 'cpp';
+                else if (['sdc', 'tcl', 'qsf', 'qpf'].includes(ext)) type = 'tcl';
+                else if (base === 'makefile' || ['mk', 'mak'].includes(ext)) type = 'makefile';
+                else if (['md', 'markdown'].includes(ext)) type = 'markdown';
+                else if (['sh', 'bash'].includes(ext)) type = 'shell';
+                else if (ext === 'json') type = 'json';
+                else if (['mif', 'hex', 'mem'].includes(ext)) type = 'txt';
+                else if (ext) type = ext;
+
                 db.prepare("INSERT INTO files (id, project_id, name, path, content, type) VALUES (?, ?, ?, ?, ?, ?)").run(id, projectId, nodePath.basename(relPath), relPath, content, type);
              }
           }
