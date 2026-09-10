@@ -23,6 +23,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
     name TEXT,
+    custom_path TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
@@ -49,6 +50,24 @@ try {
   // column might already exist
 }
 
+try {
+  db.exec(`ALTER TABLE projects ADD COLUMN custom_path TEXT`);
+} catch (e) {
+  // column might already exist
+}
+
+export function sanitizeProjectName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+}
+
+export function getProjectExportDir(project: { id: string; name: string; custom_path?: string | null }): string {
+  if (project.custom_path && project.custom_path.trim()) {
+    return path.resolve(project.custom_path.trim());
+  }
+  const baseDir = process.env.WORKSPACE_DIR || path.join(process.cwd(), '.workspace_export');
+  return path.resolve(baseDir, sanitizeProjectName(project.name));
+}
+
 db.exec(`INSERT OR IGNORE INTO projects (id, name) VALUES ('default', 'Default Project')`);
 
 async function startServer() {
@@ -62,18 +81,115 @@ async function startServer() {
   // Projects API
   app.get("/api/projects", (_req, res) => {
     try {
-      const rows = db.prepare("SELECT * FROM projects ORDER BY created_at DESC").all();
-      res.json(rows);
+      const rows = db.prepare("SELECT * FROM projects ORDER BY created_at DESC").all() as any[];
+      const projectsWithDisk = rows.map(p => ({
+        ...p,
+        disk_path: getProjectExportDir(p),
+        is_custom: Boolean(p.custom_path && p.custom_path.trim()),
+      }));
+      res.json(projectsWithDisk);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post("/api/projects", (req, res) => {
+  app.post("/api/projects", async (req, res) => {
     try {
-      const { id, name } = req.body;
-      db.prepare("INSERT INTO projects (id, name) VALUES (?, ?)").run(id, name);
-      res.json({ success: true, id });
+      const { id, name, custom_path } = req.body;
+      const cleanCustom = custom_path && custom_path.trim() ? custom_path.trim() : null;
+      db.prepare("INSERT INTO projects (id, name, custom_path) VALUES (?, ?, ?)").run(id, name, cleanCustom);
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as any;
+      const disk_path = getProjectExportDir(project);
+
+      const fs = await import('fs/promises');
+      try {
+        await fs.mkdir(disk_path, { recursive: true });
+      } catch {}
+
+      res.json({ success: true, id, disk_path });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/projects/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, custom_path } = req.body;
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as any;
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const newName = name !== undefined ? name : project.name;
+      let newCustomPath = project.custom_path;
+      if (custom_path !== undefined) {
+        newCustomPath = custom_path && custom_path.trim() ? custom_path.trim() : null;
+      }
+
+      db.prepare("UPDATE projects SET name = ?, custom_path = ? WHERE id = ?").run(newName, newCustomPath, id);
+      const updated = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as any;
+      const disk_path = getProjectExportDir(updated);
+
+      const fs = await import('fs/promises');
+      try {
+        await fs.mkdir(disk_path, { recursive: true });
+      } catch {}
+
+      res.json({
+        success: true,
+        project: {
+          ...updated,
+          disk_path,
+          is_custom: Boolean(updated.custom_path && updated.custom_path.trim()),
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/projects/:id/disk_info", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as any;
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const fs = await import('fs/promises');
+      const disk_path = getProjectExportDir(project);
+      const default_path = path.resolve(process.env.WORKSPACE_DIR || path.join(process.cwd(), '.workspace_export'), sanitizeProjectName(project.name));
+
+      let exists = false;
+      let files: string[] = [];
+      try {
+        const stat = await fs.stat(disk_path);
+        exists = stat.isDirectory();
+        if (exists) {
+          async function scan(dir: string) {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              if (entry.name.startsWith('.') || ['sim', 'obj_dir', 'output_files', 'db', 'incremental_db'].includes(entry.name.toLowerCase())) continue;
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                await scan(full);
+              } else if (entry.isFile()) {
+                files.push(path.relative(disk_path, full).replace(/\\/g, '/'));
+              }
+            }
+          }
+          await scan(disk_path);
+        }
+      } catch {}
+
+      res.json({
+        id: project.id,
+        name: project.name,
+        disk_path,
+        default_path,
+        custom_path: project.custom_path || null,
+        is_custom: Boolean(project.custom_path && project.custom_path.trim()),
+        exists,
+        files_count: files.length,
+        files: files.slice(0, 100),
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -83,18 +199,16 @@ async function startServer() {
     try {
       const rows = db.prepare("SELECT * FROM files WHERE project_id = ?").all(req.params.projectId) as any[];
       
-      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.projectId) as { id: string, name: string };
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.projectId) as { id: string; name: string; custom_path?: string | null };
       if (!project) return res.json(rows);
       
       const fs = await import('fs/promises');
-      const nodePath = await import('path');
-      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve((process.env.WORKSPACE_DIR || nodePath.join(process.cwd(), '.workspace_export')), sanitize(project.name));
+      const exportDir = getProjectExportDir(project);
       
       for (const row of rows) {
         if (row.is_link) {
           try {
-            const fullPath = nodePath.resolve(exportDir, row.path);
+            const fullPath = path.resolve(exportDir, row.path);
             if (fullPath.startsWith(exportDir)) {
               row.content = await fs.readFile(fullPath, 'utf8');
             }
@@ -153,11 +267,9 @@ async function startServer() {
         const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(project_id) as any;
         if (project) {
           const fs = await import('fs/promises');
-          const nodePath = await import('path');
-          const sanitize = (n: string) => n.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-          const exportDir = nodePath.resolve(nodePath.join(process.cwd(), '.workspace_export'), sanitize(project.name));
-          const fullPath = nodePath.resolve(exportDir, path);
-          await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+          const exportDir = getProjectExportDir(project);
+          const fullPath = path.resolve(exportDir, path);
+          await fs.mkdir(path.dirname(fullPath), { recursive: true });
           await fs.writeFile(fullPath, content || '', 'utf8');
         }
       }
@@ -179,10 +291,8 @@ async function startServer() {
         const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(file.project_id) as any;
         if (project) {
           const fs = await import('fs/promises');
-          const nodePath = await import('path');
-          const sanitize = (n: string) => n.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-          const exportDir = nodePath.resolve(nodePath.join(process.cwd(), '.workspace_export'), sanitize(project.name));
-          const fullPath = nodePath.resolve(exportDir, file.path);
+          const exportDir = getProjectExportDir(project);
+          const fullPath = path.resolve(exportDir, file.path);
           try { await fs.unlink(fullPath); } catch (e) {}
         }
       }
@@ -392,7 +502,7 @@ async function startServer() {
     try {
       const { projectId = 'default', commitMessage = 'Auto-exported from Workspace' } = req.body;
       
-      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as any;
       if (!project) throw new Error("Project not found");
 
       const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string }[];
@@ -401,9 +511,7 @@ async function startServer() {
       const nodePath = await import('path');
       const { simpleGit } = await import('simple-git');
       
-      // Determine export dir: projects/<project_name_sanitized>
-      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(nodePath.join(process.cwd(), '.workspace_export'), sanitize(project.name));
+      const exportDir = getProjectExportDir(project);
       
       await fs.mkdir(exportDir, { recursive: true });
       
@@ -446,14 +554,13 @@ async function startServer() {
   app.post('/api/git/action', async (req, res) => {
     try {
       const { projectId = 'default', action, path = '', commitMessage = '' } = req.body;
-      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as any;
       if (!project) throw new Error("Project not found");
       
       const nodePath = await import('path');
       const fs = await import('fs/promises');
       const { simpleGit } = await import('simple-git');
-      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(nodePath.join(process.cwd(), '.workspace_export'), sanitize(project.name));
+      const exportDir = getProjectExportDir(project);
       
       await fs.mkdir(exportDir, { recursive: true });
       const git = simpleGit(exportDir);
@@ -633,7 +740,7 @@ async function startServer() {
           const crypto = await import('crypto');
           for (const relPath of filesOnDisk) {
              const content = await fs.readFile(nodePath.join(exportDir, relPath), 'utf8');
-             const existing = db.prepare("SELECT * FROM files WHERE project_id = ? AND path = ?").get(projectId, relPath);
+             const existing = db.prepare("SELECT * FROM files WHERE project_id = ? AND path = ?").get(projectId, relPath) as any;
              if (existing) {
                 db.prepare("UPDATE files SET content = ? WHERE id = ?").run(content, existing.id);
              } else {
@@ -657,6 +764,13 @@ async function startServer() {
                 db.prepare("INSERT INTO files (id, project_id, name, path, content, type) VALUES (?, ?, ?, ?, ?, ?)").run(id, projectId, nodePath.basename(relPath), relPath, content, type);
              }
           }
+          result = {
+             success: true,
+             action: 'sync_from_disk',
+             disk_path: exportDir,
+             syncedFilesCount: filesOnDisk.length,
+             syncedFiles: filesOnDisk
+          };
       } else if (action === 'show') {
          if (isRepo) {
             try {
@@ -679,14 +793,13 @@ async function startServer() {
   app.get('/api/git/status', async (req, res) => {
     try {
       const { projectId = 'default' } = req.query;
-      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId as string) as { id: string, name: string };
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId as string) as any;
       if (!project) throw new Error("Project not found");
       
       const nodePath = await import('path');
       const fs = await import('fs/promises');
       const { simpleGit } = await import('simple-git');
-      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(nodePath.join(process.cwd(), '.workspace_export'), sanitize(project.name));
+      const exportDir = getProjectExportDir(project);
       
       try { await fs.access(exportDir); } catch { await fs.mkdir(exportDir, { recursive: true }); }
       const git = simpleGit(exportDir);
@@ -836,7 +949,7 @@ async function startServer() {
     try {
       const { projectId = 'default', target = '', workDir = '' } = req.body;
       
-      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as any;
       if (!project) throw new Error("Project not found");
 
       const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string, is_link?: number }[];
@@ -847,9 +960,7 @@ async function startServer() {
       const { promisify } = await import('util');
       const execAsync = promisify(exec);
       
-      // Determine export dir: projects_export/<project_name_sanitized>
-      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(nodePath.join(process.cwd(), '.workspace_export'), sanitize(project.name));
+      const exportDir = getProjectExportDir(project);
       
       await fs.mkdir(exportDir, { recursive: true });
       
@@ -886,13 +997,12 @@ async function startServer() {
       const filePath = req.query.path as string;
       if (!projectId || !filePath) return res.status(400).json({ error: "Missing params" });
       
-      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as any;
       if (!project) return res.status(404).json({ error: "Project not found" });
       
       const fs = await import('fs/promises');
       const nodePath = await import('path');
-      const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-      const exportDir = nodePath.resolve(nodePath.join(process.cwd(), '.workspace_export'), sanitize(project.name));
+      const exportDir = getProjectExportDir(project);
       const fullPath = nodePath.resolve(exportDir, filePath);
       
       // prevent directory traversal
@@ -941,15 +1051,14 @@ async function startServer() {
         if (msg.type === 'start') {
           const { projectId, breakpoints } = msg;
           // Find project
-          const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { id: string, name: string };
+          const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as any;
           if (!project) {
             ws.send(JSON.stringify({ type: 'error', data: 'Project not found' }));
             return;
           }
           
-          const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
           const nodePath = await import('path');
-          const exportDir = nodePath.resolve(nodePath.join(process.cwd(), '.workspace_export'), sanitize(project.name));
+          const exportDir = getProjectExportDir(project);
           
           // First, compile the project
           ws.send(JSON.stringify({ type: 'output', data: 'Exporting files...' }));

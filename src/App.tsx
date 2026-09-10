@@ -43,6 +43,7 @@ import { BuildOutputPanel } from "./components/BuildOutputPanel";
 import { TabsBar } from "./components/TabsBar";
 import { ProjectTree, TreeNode } from "./components/ProjectTree";
 import { Header } from "./components/Header";
+import { ProjectFolderModal } from "./components/ProjectFolderModal";
 
 import { VerilogDiagramViewer } from "./components/VerilogDiagramViewer";
 import { VerilogASTViewer } from "./components/VerilogASTViewer";
@@ -157,7 +158,30 @@ export default function App() {
     string
   > | null>(null);
 
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projects, setProjects] = useState<
+    {
+      id: string;
+      name: string;
+      disk_path?: string;
+      is_custom?: boolean;
+      custom_path?: string | null;
+    }[]
+  >([]);
+  const [isProjectFolderModalOpen, setIsProjectFolderModalOpen] = useState(false);
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      const res = await fetch("/api/projects");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.length > 0) {
+          setProjects(data);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch projects", e);
+    }
+  }, []);
 
   const [editorSettings, setEditorSettings] = useState<EditorSettings>(() => {
     const saved = localStorage.getItem("editorSettings");
@@ -1693,12 +1717,17 @@ int main(int argc, char** argv) {
         }),
       });
       if (res.ok) {
+        const data = await res.json();
         if (action === "sync_from_disk") {
-           window.location.reload();
-           return;
+          const count = data.syncedFilesCount ?? 0;
+          const diskPath = data.disk_path || "";
+          alert(
+            `Синхронизация завершена!\nИмпортировано/обновлено файлов: ${count}\nПапка на диске:\n${diskPath}`,
+          );
+          window.location.reload();
+          return;
         }
         fetchGitStatus();
-        const data = await res.json();
         if (action === "commit" && data.commitResult) {
           setGitMessageContent(data.commitResult);
           setGitMessageOpen(true);
@@ -1980,12 +2009,26 @@ int main(int argc, char** argv) {
         onChange={setEditorSettings}
         onClose={() => setIsEditorSettingsOpen(false)}
       />
+      {/* Project Folder Modal */}
+      {activeProject && (
+        <ProjectFolderModal
+          isOpen={isProjectFolderModalOpen}
+          onClose={() => setIsProjectFolderModalOpen(false)}
+          activeProjectId={activeProject}
+          projectName={
+            projects.find((p) => p.id === activeProject)?.name || activeProject
+          }
+          onSyncFromDisk={() => handleGitAction("sync_from_disk")}
+          onProjectUpdated={() => fetchProjects()}
+        />
+      )}
       {/* Header */}
       <Header
         activeProject={activeProject}
         setActiveProject={setActiveProject}
         projects={projects}
         createNewProject={createNewProject}
+        onOpenProjectFolder={() => setIsProjectFolderModalOpen(true)}
         activeFile={activeFile}
         filesData={filesData}
         saveFile={saveFile}

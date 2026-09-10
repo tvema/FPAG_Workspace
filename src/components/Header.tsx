@@ -13,14 +13,15 @@ import { Cpu,
   GitMerge,
   Settings2,
   CheckCircle2,
-  Bug, RefreshCw, CloudDownload } from "lucide-react";
+  Bug, RefreshCw, CloudDownload, FolderGit2 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
 interface HeaderProps {
   activeProject: string | null;
   setActiveProject: (id: string) => void;
-  projects: { id: string; name: string }[];
+  projects: { id: string; name: string; disk_path?: string; is_custom?: boolean; custom_path?: string | null }[];
   createNewProject: () => void;
+  onOpenProjectFolder: () => void;
   activeFile: string;
   filesData: Record<
     string,
@@ -55,6 +56,7 @@ export function Header({
   setActiveProject,
   projects,
   createNewProject,
+  onOpenProjectFolder,
   activeFile,
   filesData,
   saveFile,
@@ -76,6 +78,8 @@ export function Header({
   onOpenEditorSettings,
   handleEditTemplate,
 }: HeaderProps) {
+  const currentProjectObj = projects.find((p) => p.id === activeProject);
+
   return (
     <header className="border-b border-white/10 bg-[#121214] px-6 py-4 flex items-center justify-between z-10 relative">
       <div className="flex items-center gap-6">
@@ -115,6 +119,25 @@ export function Header({
               <ChevronRight className="w-3 h-3 rotate-90" />
             </div>
           </div>
+
+          <button
+            onClick={onOpenProjectFolder}
+            title={
+              currentProjectObj?.disk_path
+                ? `Папка на диске: ${currentProjectObj.disk_path}\nНажмите для настройки`
+                : "Настроить папку синхронизации на сервере"
+            }
+            className={`text-xs px-2.5 py-1.5 rounded-md flex items-center gap-1.5 border transition-colors cursor-pointer ${
+              currentProjectObj?.is_custom
+                ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30"
+                : "bg-white/5 hover:bg-white/10 text-slate-300 border-white/10"
+            }`}
+          >
+            <FolderGit2 className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden md:inline max-w-[120px] truncate">
+              {currentProjectObj?.is_custom ? "Папка (кастом)" : "Папка на диске"}
+            </span>
+          </button>
 
           <button
             onClick={createNewProject}
@@ -241,7 +264,11 @@ export function Header({
               
               <DropdownMenu.Separator className="h-px bg-white/10 my-1 mx-1" />
               
-              <DropdownMenu.Item onClick={() => handleGitAction("sync_from_disk")} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-amber-300 hover:bg-white/5 mx-1 rounded">
+              <DropdownMenu.Item onClick={onOpenProjectFolder} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-amber-300 hover:bg-white/5 mx-1 rounded">
+                <FolderGit2 className="w-3.5 h-3.5" /> Папка проекта на диске...
+              </DropdownMenu.Item>
+
+              <DropdownMenu.Item onClick={() => handleGitAction("sync_from_disk")} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-slate-300 hover:bg-white/5 mx-1 rounded">
                 <RefreshCw className="w-3.5 h-3.5" /> Sync from Disk
               </DropdownMenu.Item>
               
