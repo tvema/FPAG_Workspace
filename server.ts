@@ -375,6 +375,44 @@ async function startServer() {
     }
   });
 
+  // Dump all project files from database to the disk directory
+  app.post("/api/projects/:id/sync_to_disk", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as any;
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const fs = await import('fs/promises');
+      const nodePath = await import('path');
+      const exportDir = getProjectExportDir(project);
+
+      await fs.mkdir(exportDir, { recursive: true });
+
+      const files = db.prepare("SELECT id, name, path, content, is_link FROM files WHERE project_id = ?").all(id) as any[];
+      const writtenFiles: string[] = [];
+
+      for (const file of files) {
+        if (!file.path) continue;
+        const fullPath = nodePath.resolve(exportDir, file.path);
+        if (!fullPath.startsWith(exportDir)) continue;
+
+        await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+        await fs.writeFile(fullPath, file.content || '', 'utf8');
+        writtenFiles.push(file.path);
+      }
+
+      res.json({
+        success: true,
+        disk_path: exportDir,
+        written_count: writtenFiles.length,
+        files: writtenFiles,
+      });
+    } catch (err: any) {
+      console.error("Error syncing project files to disk:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/projects/:projectId/files", async (req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM files WHERE project_id = ?").all(req.params.projectId) as any[];
@@ -427,9 +465,10 @@ async function startServer() {
   // Save or update file
   app.post("/api/files", async (req, res) => {
     try {
-      const { id, name, path, type, content, project_id = 'default' } = req.body;
+      const { id, name, path: filePath, type, content, project_id = 'default' } = req.body;
       const reqIsLink = req.body.is_link;
       const is_link = reqIsLink === true || reqIsLink === 1 || reqIsLink === 'true' || reqIsLink === '1' ? 1 : 0;
+      
       db.prepare(`
         INSERT INTO files (id, name, path, type, content, project_id, is_link) 
         VALUES (?, ?, ?, ?, ?, ?, ?) 
@@ -440,22 +479,34 @@ async function startServer() {
           content=excluded.content,
           project_id=excluded.project_id,
           is_link=excluded.is_link
-      `).run(id, name, path, type, content, project_id, is_link);
+      `).run(id, name, filePath, type, content, project_id, is_link);
 
-      // Sync to disk
-      if (!is_link) {
+      // Sync directly to disk so files and git status are always updated
+      let diskError: string | null = null;
+      try {
         const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(project_id) as any;
-        if (project) {
+        if (project && filePath) {
           const fs = await import('fs/promises');
+          const nodePath = await import('path');
           const exportDir = getProjectExportDir(project);
-          const fullPath = path.resolve(exportDir, path);
-          await fs.mkdir(path.dirname(fullPath), { recursive: true });
-          await fs.writeFile(fullPath, content || '', 'utf8');
+          const fullPath = nodePath.resolve(exportDir, filePath);
+          if (fullPath.startsWith(exportDir)) {
+            await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+            await fs.writeFile(fullPath, content || '', 'utf8');
+          }
         }
+      } catch (errOnDisk: any) {
+        console.error("Failed to write saved file to disk:", filePath, errOnDisk);
+        diskError = errOnDisk.message;
+      }
+
+      if (diskError) {
+        return res.status(500).json({ error: `Файл сохранен в базе данных, но произошла ошибка записи на диск: ${diskError}`, id });
       }
 
       res.json({ success: true, id });
     } catch (err: any) {
+      console.error("Error saving file:", err);
       res.status(500).json({ error: err.message });
     }
   });
@@ -467,13 +518,16 @@ async function startServer() {
       db.prepare("DELETE FROM files WHERE id = ?").run(req.params.id);
       db.prepare("DELETE FROM messages WHERE file_id = ?").run(req.params.id);
       
-      if (file && !file.is_link) {
+      if (file && file.path) {
         const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(file.project_id) as any;
         if (project) {
           const fs = await import('fs/promises');
+          const nodePath = await import('path');
           const exportDir = getProjectExportDir(project);
-          const fullPath = path.resolve(exportDir, file.path);
-          try { await fs.unlink(fullPath); } catch (e) {}
+          const fullPath = nodePath.resolve(exportDir, file.path);
+          if (fullPath.startsWith(exportDir)) {
+            try { await fs.unlink(fullPath); } catch (e) {}
+          }
         }
       }
       
@@ -776,6 +830,16 @@ async function startServer() {
         }
       } else if (action === 'commit') {
         if (isRepo) {
+          // Flush all project files from database to disk prior to committing
+          const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string, is_link: number }[];
+          for (const file of files) {
+            if (!file.path) continue;
+            const fullPath = nodePath.resolve(exportDir, file.path);
+            if (!fullPath.startsWith(exportDir)) continue;
+            await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+            await fs.writeFile(fullPath, file.content || '', 'utf8');
+          }
+
           await git.addConfig('user.name', 'Workspace User');
           await git.addConfig('user.email', 'workspace@example.com');
           
@@ -798,6 +862,24 @@ async function startServer() {
           }
           result.commitResult = commitOutput;
         }
+      } else if (action === 'sync_to_disk') {
+          const files = db.prepare("SELECT * FROM files WHERE project_id = ?").all(projectId) as { path: string, content: string, is_link: number }[];
+          const written: string[] = [];
+          for (const file of files) {
+            if (!file.path) continue;
+            const fullPath = nodePath.resolve(exportDir, file.path);
+            if (!fullPath.startsWith(exportDir)) continue;
+            await fs.mkdir(nodePath.dirname(fullPath), { recursive: true });
+            await fs.writeFile(fullPath, file.content || '', 'utf8');
+            written.push(file.path);
+          }
+          result = {
+            success: true,
+            action: 'sync_to_disk',
+            disk_path: exportDir,
+            syncedFilesCount: written.length,
+            syncedFiles: written,
+          };
       } else if (action === 'sync_from_disk') {
           const filesOnDisk: string[] = [];
 

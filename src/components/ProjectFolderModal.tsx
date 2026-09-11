@@ -13,7 +13,8 @@ import {
   ChevronDown, 
   ChevronUp,
   HardDrive,
-  HardDriveDownload
+  HardDriveDownload,
+  HardDriveUpload
 } from 'lucide-react';
 
 interface ProjectFolderModalProps {
@@ -22,6 +23,7 @@ interface ProjectFolderModalProps {
   activeProjectId: string;
   projectName: string;
   onSyncFromDisk: () => void;
+  onSyncToDisk?: () => void;
   onProjectUpdated?: () => void;
   onOpenImportDiskFiles?: () => void;
 }
@@ -44,6 +46,7 @@ export function ProjectFolderModal({
   activeProjectId,
   projectName,
   onSyncFromDisk,
+  onSyncToDisk,
   onProjectUpdated,
   onOpenImportDiskFiles,
 }: ProjectFolderModalProps) {
@@ -232,6 +235,20 @@ export function ProjectFolderModal({
                         </button>
                       )}
                     </div>
+
+                    {onSyncToDisk && (
+                      <button
+                        onClick={async () => {
+                          await onSyncToDisk();
+                          fetchDiskInfo();
+                        }}
+                        className="text-xs px-2.5 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Записать все файлы текущего проекта из программы на диск"
+                      >
+                        <HardDriveUpload className="w-3.5 h-3.5" />
+                        Сохранить проект на диск (Sync to Disk)
+                      </button>
+                    )}
 
                     {diskInfo?.exists && diskInfo.files_count > 0 && onOpenImportDiskFiles && (
                       <button

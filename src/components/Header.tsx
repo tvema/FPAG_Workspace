@@ -13,7 +13,7 @@ import { Cpu,
   GitMerge,
   Settings2,
   CheckCircle2,
-  Bug, RefreshCw, CloudDownload, FolderGit2, HardDriveDownload } from "lucide-react";
+  Bug, RefreshCw, CloudDownload, FolderGit2, HardDriveDownload, HardDriveUpload } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
 interface HeaderProps {
@@ -23,6 +23,7 @@ interface HeaderProps {
   createNewProject: () => void;
   onOpenProjectFolder: () => void;
   onOpenImportDiskFiles?: () => void;
+  onSyncToDisk?: () => void;
   activeFile: string;
   filesData: Record<
     string,
@@ -59,6 +60,7 @@ export function Header({
   createNewProject,
   onOpenProjectFolder,
   onOpenImportDiskFiles,
+  onSyncToDisk,
   activeFile,
   filesData,
   saveFile,
@@ -269,6 +271,12 @@ export function Header({
               <DropdownMenu.Item onClick={onOpenProjectFolder} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-amber-300 hover:bg-white/5 mx-1 rounded">
                 <FolderGit2 className="w-3.5 h-3.5" /> Папка проекта на диске...
               </DropdownMenu.Item>
+
+              {onSyncToDisk && (
+                <DropdownMenu.Item onClick={onSyncToDisk} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-emerald-300 hover:bg-white/5 mx-1 rounded">
+                  <HardDriveUpload className="w-3.5 h-3.5" /> Сохранить всё на диск (Sync to Disk)
+                </DropdownMenu.Item>
+              )}
 
               {onOpenImportDiskFiles && (
                 <DropdownMenu.Item onClick={onOpenImportDiskFiles} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-amber-300 hover:bg-white/5 mx-1 rounded">

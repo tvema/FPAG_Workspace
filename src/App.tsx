@@ -1147,12 +1147,22 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
   };
 
   const saveFileDirect = useCallback(
-    (id: string, fileObj: any, projId: string) => {
-      return fetch("/api/files", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, project_id: projId, ...fileObj }),
-      }).catch((err) => console.error("Failed to save file remotely", err));
+    async (id: string, fileObj: any, projId: string) => {
+      try {
+        const res = await fetch("/api/files", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, project_id: projId, ...fileObj }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        return true;
+      } catch (err: any) {
+        console.error("Failed to save file remotely:", err);
+        throw err;
+      }
     },
     [],
   );
@@ -1161,13 +1171,18 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
     async (id: string) => {
       if (!activeProject || !filesData[id] || !filesData[id].is_modified)
         return;
-      await saveFileDirect(id, filesData[id], activeProject);
-      setFilesData((prev) => ({
-        ...prev,
-        [id]: { ...prev[id], is_modified: false },
-      }));
+      try {
+        await saveFileDirect(id, filesData[id], activeProject);
+        setFilesData((prev) => ({
+          ...prev,
+          [id]: { ...prev[id], is_modified: false },
+        }));
+        fetchGitStatus();
+      } catch (e: any) {
+        alert(`Не удалось сохранить файл: ${e.message || e}`);
+      }
     },
-    [activeProject, filesData, saveFileDirect],
+    [activeProject, filesData, saveFileDirect, fetchGitStatus],
   );
 
   const saveAllFiles = useCallback(async () => {
@@ -1175,16 +1190,57 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
     const modifiedIds = Object.keys(filesData).filter(
       (id) => filesData[id].is_modified,
     );
-    await Promise.all(
-      modifiedIds.map(async (id) => {
+    try {
+      await Promise.all(
+        modifiedIds.map(async (id) => {
+          await saveFileDirect(id, filesData[id], activeProject);
+          setFilesData((prev) => ({
+            ...prev,
+            [id]: { ...prev[id], is_modified: false },
+          }));
+        }),
+      );
+      fetchGitStatus();
+    } catch (e: any) {
+      alert(`Ошибка при сохранении файлов: ${e.message || e}`);
+    }
+  }, [activeProject, filesData, saveFileDirect, fetchGitStatus]);
+
+  const handleSyncToDisk = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      // First save any unsaved modified files in memory
+      const modifiedIds = Object.keys(filesData).filter(
+        (id) => filesData[id].is_modified,
+      );
+      for (const id of modifiedIds) {
         await saveFileDirect(id, filesData[id], activeProject);
-        setFilesData((prev) => ({
-          ...prev,
-          [id]: { ...prev[id], is_modified: false },
-        }));
-      }),
-    );
-  }, [activeProject, filesData, saveFileDirect]);
+      }
+      setFilesData((prev) => {
+        const next = { ...prev };
+        for (const id of modifiedIds) {
+          if (next[id]) next[id] = { ...next[id], is_modified: false };
+        }
+        return next;
+      });
+
+      const res = await fetch(`/api/projects/${activeProject}/sync_to_disk`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      fetchGitStatus();
+      alert(
+        `Все файлы проекта успешно сохранены на диск!\nЗаписано файлов: ${data.written_count}\nПапка на диске:\n${data.disk_path}\n\nСтатус Git обновлен.`,
+      );
+    } catch (err: any) {
+      console.error("Failed to sync project files to disk:", err);
+      alert(`Ошибка при сохранении файлов проекта на диск: ${err.message || err}`);
+    }
+  }, [activeProject, filesData, saveFileDirect, fetchGitStatus]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1717,7 +1773,7 @@ int main(int argc, char** argv) {
   };
 
   const handleGitAction = async (
-    action: "init" | "add" | "rm" | "commit" | "sync_from_disk" | "show",
+    action: "init" | "add" | "rm" | "commit" | "sync_from_disk" | "sync_to_disk" | "show",
     path?: string,
     commitMessage?: string,
   ) => {
@@ -1747,6 +1803,15 @@ int main(int argc, char** argv) {
             `Синхронизация завершена!\nИмпортировано/обновлено файлов: ${count}\nПапка на диске:\n${diskPath}`,
           );
           window.location.reload();
+          return;
+        }
+        if (action === "sync_to_disk") {
+          const count = data.syncedFilesCount ?? 0;
+          const diskPath = data.disk_path || "";
+          alert(
+            `Все файлы проекта успешно сохранены на диск!\nЗаписано файлов: ${count}\nПапка на диске:\n${diskPath}`,
+          );
+          fetchGitStatus();
           return;
         }
         fetchGitStatus();
@@ -2041,6 +2106,7 @@ int main(int argc, char** argv) {
             projects.find((p) => p.id === activeProject)?.name || activeProject
           }
           onSyncFromDisk={() => handleGitAction("sync_from_disk")}
+          onSyncToDisk={handleSyncToDisk}
           onProjectUpdated={() => fetchProjects()}
           onOpenImportDiskFiles={() => setIsImportDiskModalOpen(true)}
         />
@@ -2066,6 +2132,7 @@ int main(int argc, char** argv) {
         createNewProject={createNewProject}
         onOpenProjectFolder={() => setIsProjectFolderModalOpen(true)}
         onOpenImportDiskFiles={() => setIsImportDiskModalOpen(true)}
+        onSyncToDisk={handleSyncToDisk}
         activeFile={activeFile}
         filesData={filesData}
         saveFile={saveFile}
