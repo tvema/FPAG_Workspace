@@ -13,7 +13,7 @@ import { Cpu,
   GitMerge,
   Settings2,
   CheckCircle2,
-  Bug, RefreshCw, CloudDownload, FolderGit2 } from "lucide-react";
+  Bug, RefreshCw, CloudDownload, FolderGit2, HardDriveDownload } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
 interface HeaderProps {
@@ -22,6 +22,7 @@ interface HeaderProps {
   projects: { id: string; name: string; disk_path?: string; is_custom?: boolean; custom_path?: string | null }[];
   createNewProject: () => void;
   onOpenProjectFolder: () => void;
+  onOpenImportDiskFiles?: () => void;
   activeFile: string;
   filesData: Record<
     string,
@@ -57,6 +58,7 @@ export function Header({
   projects,
   createNewProject,
   onOpenProjectFolder,
+  onOpenImportDiskFiles,
   activeFile,
   filesData,
   saveFile,
@@ -268,8 +270,14 @@ export function Header({
                 <FolderGit2 className="w-3.5 h-3.5" /> Папка проекта на диске...
               </DropdownMenu.Item>
 
+              {onOpenImportDiskFiles && (
+                <DropdownMenu.Item onClick={onOpenImportDiskFiles} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-amber-300 hover:bg-white/5 mx-1 rounded">
+                  <HardDriveDownload className="w-3.5 h-3.5" /> Добавить файлы с диска...
+                </DropdownMenu.Item>
+              )}
+
               <DropdownMenu.Item onClick={() => handleGitAction("sync_from_disk")} className="px-3 py-1.5 text-xs cursor-pointer outline-none flex items-center gap-2 text-slate-300 hover:bg-white/5 mx-1 rounded">
-                <RefreshCw className="w-3.5 h-3.5" /> Sync from Disk
+                <RefreshCw className="w-3.5 h-3.5" /> Sync from Disk (полный)
               </DropdownMenu.Item>
               
               <DropdownMenu.Separator className="h-px bg-white/10 my-1 mx-1" />

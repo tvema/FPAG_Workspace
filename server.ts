@@ -195,6 +195,186 @@ async function startServer() {
     }
   });
 
+  // Detailed scan of disk files for selective import
+  app.get("/api/projects/:id/disk_files", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as any;
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const fs = await import('fs/promises');
+      const disk_path = getProjectExportDir(project);
+
+      const dbFiles = db.prepare("SELECT id, name, path, content, is_link, type FROM files WHERE project_id = ?").all(id) as any[];
+      const dbFileMap = new Map<string, any>();
+      for (const f of dbFiles) {
+        dbFileMap.set(f.path, f);
+      }
+
+      let exists = false;
+      const items: any[] = [];
+
+      try {
+        const stat = await fs.stat(disk_path);
+        exists = stat.isDirectory();
+        if (exists) {
+          async function scan(dir: string) {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              if (
+                entry.name.startsWith('.') ||
+                ['sim', 'obj_dir', 'output_files', 'db', 'incremental_db', 'node_modules', '.workspace_export'].includes(entry.name.toLowerCase())
+              ) {
+                continue;
+              }
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                await scan(full);
+              } else if (entry.isFile()) {
+                const relPath = path.relative(disk_path, full).replace(/\\/g, '/');
+                const fileStat = await fs.stat(full);
+
+                const dbFile = dbFileMap.get(relPath);
+                let status: 'new' | 'modified' | 'identical' = 'new';
+                let in_project = false;
+                let is_link = false;
+                let file_id: string | null = null;
+
+                if (dbFile) {
+                  in_project = true;
+                  file_id = dbFile.id;
+                  is_link = Boolean(dbFile.is_link);
+                  if (fileStat.size < 2 * 1024 * 1024) {
+                    try {
+                      const diskContent = await fs.readFile(full, 'utf8');
+                      status = (diskContent === (dbFile.content || '')) ? 'identical' : 'modified';
+                    } catch {
+                      status = 'modified';
+                    }
+                  } else {
+                    status = 'modified';
+                  }
+                }
+
+                items.push({
+                  path: relPath,
+                  name: entry.name,
+                  size: fileStat.size,
+                  mtime: fileStat.mtime.toISOString(),
+                  status,
+                  in_project,
+                  is_link,
+                  file_id,
+                });
+              }
+            }
+          }
+          await scan(disk_path);
+        }
+      } catch {}
+
+      items.sort((a, b) => {
+        const rank = (s: string) => (s === 'new' ? 0 : s === 'modified' ? 1 : 2);
+        if (rank(a.status) !== rank(b.status)) return rank(a.status) - rank(b.status);
+        return a.path.localeCompare(b.path);
+      });
+
+      res.json({
+        project_id: id,
+        project_name: project.name,
+        disk_path,
+        exists,
+        total_count: items.length,
+        new_count: items.filter((i) => i.status === 'new').length,
+        modified_count: items.filter((i) => i.status === 'modified').length,
+        identical_count: items.filter((i) => i.status === 'identical').length,
+        files: items,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Selective import files from disk
+  app.post("/api/projects/:id/import_disk_files", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { files } = req.body as { files: Array<{ path: string; as_link?: boolean }> };
+      if (!Array.isArray(files) || files.length === 0) {
+        return res.status(400).json({ error: "No files specified for import" });
+      }
+
+      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as any;
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const fs = await import('fs/promises');
+      const crypto = await import('crypto');
+      const disk_path = getProjectExportDir(project);
+
+      const importedFiles: string[] = [];
+      const updatedFiles: string[] = [];
+
+      for (const item of files) {
+        const relPath = item.path;
+        const fullPath = path.resolve(disk_path, relPath);
+        if (!fullPath.startsWith(disk_path)) {
+          continue;
+        }
+
+        let content = '';
+        try {
+          content = await fs.readFile(fullPath, 'utf8');
+        } catch (e: any) {
+          continue;
+        }
+
+        const existing = db.prepare("SELECT id, path FROM files WHERE project_id = ? AND path = ?").get(id, relPath) as any;
+        if (existing) {
+          const is_link = item.as_link !== undefined ? (item.as_link ? 1 : 0) : undefined;
+          if (is_link !== undefined) {
+            db.prepare("UPDATE files SET content = ?, is_link = ? WHERE id = ?").run(content, is_link, existing.id);
+          } else {
+            db.prepare("UPDATE files SET content = ? WHERE id = ?").run(content, existing.id);
+          }
+          updatedFiles.push(relPath);
+        } else {
+          const fileId = crypto.randomUUID();
+          let type = 'plaintext';
+          const lower = relPath.toLowerCase();
+          const ext = path.extname(lower).replace(/^\./, '');
+          const base = path.basename(lower);
+          if (['v', 'vh'].includes(ext)) type = 'verilog';
+          else if (['sv', 'svh'].includes(ext)) type = 'systemverilog';
+          else if (['c', 'h'].includes(ext)) type = 'c';
+          else if (['cpp', 'cc', 'cxx', 'hpp', 'hh', 'hxx'].includes(ext)) type = 'cpp';
+          else if (['sdc', 'tcl', 'qsf', 'qpf'].includes(ext)) type = 'tcl';
+          else if (base === 'makefile' || ['mk', 'mak'].includes(ext)) type = 'makefile';
+          else if (['md', 'markdown'].includes(ext)) type = 'markdown';
+          else if (['sh', 'bash'].includes(ext)) type = 'shell';
+          else if (ext === 'json') type = 'json';
+          else if (['mif', 'hex', 'mem'].includes(ext)) type = 'txt';
+          else if (ext) type = ext;
+
+          const is_link = item.as_link ? 1 : 0;
+          db.prepare("INSERT INTO files (id, project_id, name, path, content, type, is_link) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .run(fileId, id, path.basename(relPath), relPath, content, type, is_link);
+          importedFiles.push(relPath);
+        }
+      }
+
+      res.json({
+        success: true,
+        count: importedFiles.length + updatedFiles.length,
+        added_count: importedFiles.length,
+        updated_count: updatedFiles.length,
+        added: importedFiles,
+        updated: updatedFiles,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/projects/:projectId/files", async (req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM files WHERE project_id = ?").all(req.params.projectId) as any[];

@@ -1,4 +1,4 @@
-import { Link, Box, FolderPlus, FilePlus, Upload } from "lucide-react";
+import { Link, Box, FolderPlus, FilePlus, Upload, HardDriveDownload } from "lucide-react";
 import React, {
   useState,
   useEffect,
@@ -44,6 +44,7 @@ import { TabsBar } from "./components/TabsBar";
 import { ProjectTree, TreeNode } from "./components/ProjectTree";
 import { Header } from "./components/Header";
 import { ProjectFolderModal } from "./components/ProjectFolderModal";
+import { ImportDiskFilesModal } from "./components/ImportDiskFilesModal";
 
 import { VerilogDiagramViewer } from "./components/VerilogDiagramViewer";
 import { VerilogASTViewer } from "./components/VerilogASTViewer";
@@ -168,6 +169,27 @@ export default function App() {
     }[]
   >([]);
   const [isProjectFolderModalOpen, setIsProjectFolderModalOpen] = useState(false);
+  const [isImportDiskModalOpen, setIsImportDiskModalOpen] = useState(false);
+
+  const refreshProjectFiles = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const res = await fetch(`/api/projects/${activeProject}/files`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          const parsed = data.reduce((acc: any, f: any) => {
+            f.is_link = Boolean(f.is_link);
+            acc[f.id] = f;
+            return acc;
+          }, {});
+          setFilesData(parsed);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to refresh files", e);
+    }
+  }, [activeProject]);
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -2020,6 +2042,20 @@ int main(int argc, char** argv) {
           }
           onSyncFromDisk={() => handleGitAction("sync_from_disk")}
           onProjectUpdated={() => fetchProjects()}
+          onOpenImportDiskFiles={() => setIsImportDiskModalOpen(true)}
+        />
+      )}
+      {/* Import Disk Files Modal (Selective Sync) */}
+      {activeProject && (
+        <ImportDiskFilesModal
+          isOpen={isImportDiskModalOpen}
+          onClose={() => setIsImportDiskModalOpen(false)}
+          projectId={activeProject}
+          projectName={
+            projects.find((p) => p.id === activeProject)?.name || activeProject
+          }
+          onFilesImported={() => refreshProjectFiles()}
+          onOpenFolderSettings={() => setIsProjectFolderModalOpen(true)}
         />
       )}
       {/* Header */}
@@ -2029,6 +2065,7 @@ int main(int argc, char** argv) {
         projects={projects}
         createNewProject={createNewProject}
         onOpenProjectFolder={() => setIsProjectFolderModalOpen(true)}
+        onOpenImportDiskFiles={() => setIsImportDiskModalOpen(true)}
         activeFile={activeFile}
         filesData={filesData}
         saveFile={saveFile}
@@ -2492,6 +2529,13 @@ int main(int argc, char** argv) {
                     title="Upload File"
                   >
                     <Upload className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setIsImportDiskModalOpen(true)}
+                    className="text-slate-400 hover:text-amber-400 transition-colors"
+                    title="Добавить файлы с диска в проект (выборочный импорт)"
+                  >
+                    <HardDriveDownload className="w-4 h-4" />
                   </button>
                 </div>
               </div>

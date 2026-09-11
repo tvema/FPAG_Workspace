@@ -12,7 +12,8 @@ import {
   FileCode, 
   ChevronDown, 
   ChevronUp,
-  HardDrive
+  HardDrive,
+  HardDriveDownload
 } from 'lucide-react';
 
 interface ProjectFolderModalProps {
@@ -22,6 +23,7 @@ interface ProjectFolderModalProps {
   projectName: string;
   onSyncFromDisk: () => void;
   onProjectUpdated?: () => void;
+  onOpenImportDiskFiles?: () => void;
 }
 
 interface DiskInfo {
@@ -43,6 +45,7 @@ export function ProjectFolderModal({
   projectName,
   onSyncFromDisk,
   onProjectUpdated,
+  onOpenImportDiskFiles,
 }: ProjectFolderModalProps) {
   const [diskInfo, setDiskInfo] = useState<DiskInfo | null>(null);
   const [customPathInput, setCustomPathInput] = useState('');
@@ -216,15 +219,30 @@ export function ProjectFolderModal({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 text-slate-300">
-                    <span>Найдено файлов на диске: <strong>{diskInfo?.files_count ?? 0}</strong></span>
-                    {diskInfo && diskInfo.files_count > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-slate-300">
+                    <div className="flex items-center gap-2">
+                      <span>Найдено файлов на диске: <strong>{diskInfo?.files_count ?? 0}</strong></span>
+                      {diskInfo && diskInfo.files_count > 0 && (
+                        <button
+                          onClick={() => setShowFileList(!showFileList)}
+                          className="text-amber-400 hover:text-amber-300 underline flex items-center gap-0.5 cursor-pointer"
+                        >
+                          {showFileList ? 'скрыть' : 'показать'}
+                          {showFileList ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                      )}
+                    </div>
+
+                    {diskInfo?.exists && diskInfo.files_count > 0 && onOpenImportDiskFiles && (
                       <button
-                        onClick={() => setShowFileList(!showFileList)}
-                        className="text-amber-400 hover:text-amber-300 underline flex items-center gap-0.5"
+                        onClick={() => {
+                          onClose();
+                          onOpenImportDiskFiles();
+                        }}
+                        className="text-xs px-2.5 py-1 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
-                        {showFileList ? 'скрыть' : 'показать'}
-                        {showFileList ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        <HardDriveDownload className="w-3.5 h-3.5" />
+                        Выборочно добавить файлы в проект...
                       </button>
                     )}
                   </div>
