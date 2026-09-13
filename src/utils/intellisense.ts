@@ -15,26 +15,32 @@ const cKeywords = [
 ];
 
 export function registerIntellisense(monaco: any) {
-  if (isRegistered || !monaco) return;
-  isRegistered = true;
+  if (!monaco) return;
+  if ((monaco as any).__intellisenseRegistered) return;
+  (monaco as any).__intellisenseRegistered = true;
 
-  monaco.editor.registerCommand('verilog.retypeLastChar', (accessor: any, char: string) => {
-    const editors = monaco.editor.getEditors();
-    const activeEditor = editors.find((e: any) => e.hasTextFocus() || e.hasWidgetFocus()) || editors[0];
-    if (activeEditor) {
-      activeEditor.trigger('keyboard', 'deleteLeft', {});
-      activeEditor.trigger('keyboard', 'type', { text: char });
-    }
-  });
+  try {
+    monaco.editor.registerCommand('verilog.retypeLastChar', (_accessor: any, char: string) => {
+      const editors = monaco.editor.getEditors();
+      const activeEditor = editors.find((e: any) => e.hasTextFocus() || e.hasWidgetFocus()) || editors[0];
+      if (activeEditor) {
+        activeEditor.trigger('keyboard', 'deleteLeft', {});
+        activeEditor.trigger('keyboard', 'type', { text: char });
+      }
+    });
+  } catch (e) {
+    // Command may already be registered on a global registry
+  }
 
   const cProvider = {
+    triggerCharacters: ['.', '>', ':', '#'],
     provideCompletionItems: (model: any, position: any) => {
       const wordInfo = model.getWordUntilPosition(position);
       const range = {
         startLineNumber: position.lineNumber,
         endLineNumber: position.lineNumber,
-        startColumn: wordInfo.startColumn,
-        endColumn: wordInfo.endColumn,
+        startColumn: wordInfo ? wordInfo.startColumn : position.column,
+        endColumn: wordInfo ? wordInfo.endColumn : position.column,
       };
 
       const suggestions: any[] = [];
@@ -52,17 +58,20 @@ export function registerIntellisense(monaco: any) {
     }
   };
 
-  monaco.languages.registerCompletionItemProvider("c", cProvider);
-  monaco.languages.registerCompletionItemProvider("cpp", cProvider);
+  try {
+    monaco.languages.registerCompletionItemProvider("c", cProvider);
+    monaco.languages.registerCompletionItemProvider("cpp", cProvider);
+  } catch (e) {}
 
   const svProvider = {
+    triggerCharacters: ['.', '$', '@', '`', '#'],
     provideCompletionItems: (model: any, position: any) => {
       const wordInfo = model.getWordUntilPosition(position);
       const range = {
         startLineNumber: position.lineNumber,
         endLineNumber: position.lineNumber,
-        startColumn: wordInfo.startColumn,
-        endColumn: wordInfo.endColumn,
+        startColumn: wordInfo ? wordInfo.startColumn : position.column,
+        endColumn: wordInfo ? wordInfo.endColumn : position.column,
       };
 
       const ext = model.uri && model.uri.path ? model.uri.path.split('.').pop()?.toLowerCase() : '';
@@ -90,7 +99,6 @@ export function registerIntellisense(monaco: any) {
 
       try {
         // Use a cached version of the AST that doesn't re-parse on every keystroke
-        // The AST will be slightly stale but it's fine for autocomplete
         const uriString = model.uri ? model.uri.toString() : 'unknown';
         const now = Date.now();
         
@@ -103,10 +111,8 @@ export function registerIntellisense(monaco: any) {
         let cached = astCache.get(uriString);
         let text = model.getValue();
         
-        // Only re-parse at most once every 2 seconds
-        if (!cached || now - cached.timestamp > 2000) {
-            // Note: parseVerilog has its own text-based cache, but this prevents
-            // calling it on every keystroke when text changes constantly
+        // Only re-parse at most once every 1.5 seconds
+        if (!cached || now - cached.timestamp > 1500) {
             cached = {
                 timestamp: now,
                 modules: parseVerilog(text)
@@ -125,25 +131,29 @@ export function registerIntellisense(monaco: any) {
             range: range
           });
           
-          mod.signals.forEach((sig: any) => {
-            suggestions.push({
-              label: sig.name,
-              kind: sig.ioType ? monaco.languages.CompletionItemKind.Interface : (sig.type === "parameter" || sig.type === "localparam" ? monaco.languages.CompletionItemKind.Constant : monaco.languages.CompletionItemKind.Variable),
-              insertText: sig.name,
-              detail: sig.ioType ? `${sig.ioType} ${sig.type}` : sig.type,
-              range: range
+          if (Array.isArray(mod.signals)) {
+            mod.signals.forEach((sig: any) => {
+              suggestions.push({
+                label: sig.name,
+                kind: sig.ioType ? monaco.languages.CompletionItemKind.Interface : (sig.type === "parameter" || sig.type === "localparam" ? monaco.languages.CompletionItemKind.Constant : monaco.languages.CompletionItemKind.Variable),
+                insertText: sig.name,
+                detail: sig.ioType ? `${sig.ioType} ${sig.type}` : sig.type,
+                range: range
+              });
             });
-          });
+          }
           
-          mod.instances.forEach((inst: any) => {
-            suggestions.push({
-              label: inst.name,
-              kind: monaco.languages.CompletionItemKind.Field,
-              insertText: inst.name,
-              detail: `instance of ${inst.type}`,
-              range: range
+          if (Array.isArray(mod.instances)) {
+            mod.instances.forEach((inst: any) => {
+              suggestions.push({
+                label: inst.name,
+                kind: monaco.languages.CompletionItemKind.Field,
+                insertText: inst.name,
+                detail: `instance of ${inst.type}`,
+                range: range
+              });
             });
-          });
+          }
         });
       } catch (e) {
         console.error("Intellisense parser error:", e);
@@ -163,6 +173,8 @@ export function registerIntellisense(monaco: any) {
     }
   };
 
-  monaco.languages.registerCompletionItemProvider("verilog", svProvider);
-  monaco.languages.registerCompletionItemProvider("systemverilog", svProvider);
+  try {
+    monaco.languages.registerCompletionItemProvider("verilog", svProvider);
+    monaco.languages.registerCompletionItemProvider("systemverilog", svProvider);
+  } catch (e) {}
 }

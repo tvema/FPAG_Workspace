@@ -45,6 +45,17 @@ export function TabsBar({
   isExportingPdf,
   isMarkdownMode
 }: TabsBarProps) {
+  // Deduplicate tabs by normalized file path and ensure file exists
+  const seenPaths = new Set<string>();
+  const uniqueTabs = openedTabs.filter(id => {
+    const file = filesData[id];
+    if (!file) return false;
+    const norm = ((file as any).path || file.name || id).replace(/^[./\\]+/, '').replace(/\\/g, '/');
+    if (seenPaths.has(norm)) return false;
+    seenPaths.add(norm);
+    return true;
+  });
+
   return (
     <div className="flex bg-[#121214] border-b border-black/50 shrink-0 justify-between items-center min-w-0">
       <div className="flex items-center">
@@ -60,7 +71,7 @@ export function TabsBar({
         )}
       </div>
       <div className="flex overflow-x-auto no-scrollbar flex-1 items-center" ref={tabsContainerRef}>
-        {openedTabs.map(id => (
+        {uniqueTabs.map(id => (
           <div 
             key={id} 
             draggable
@@ -90,7 +101,7 @@ export function TabsBar({
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content align="end" className="bg-[#1e1e1e] border border-white/10 rounded-md shadow-xl py-1 min-w-[200px] z-[120] max-h-[300px] overflow-y-auto">
-                {openedTabs.map(id => (
+                {uniqueTabs.map(id => (
                   <DropdownMenu.Item 
                     key={id}
                     onClick={() => setActiveFile(id)}

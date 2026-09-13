@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Bot, User, Settings, Loader2, AlertCircle, Save, GitMerge, X, Database } from 'lucide-react';
+import { Send, Bot, User, Settings, Loader2, AlertCircle, Save, GitMerge, X, Database, Trash2 } from 'lucide-react';
 import { parseVerilog } from '../utils/verilogParser';
 import debounce from 'lodash.debounce';
 import { LocalStorageManagerModal } from './LocalStorageManagerModal';
@@ -301,7 +301,39 @@ function ChatInput({ input, setInput, onSend, isLoading }: { input: string, setI
     );
 }
 
-export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFilePath, activeFileContent, projectContext, onProposeMerge, input, setInput, allFiles, onProposeMultiMerge, chatMode, setChatMode }: { onAddFile: (path: string, code: string) => void, activeFileId: string | null, activeProjectId: string | null, activeFilePath: string | null, activeFileContent: string | null, projectContext?: string | null, onProposeMerge: (code: string) => void, input: string, setInput: (v: string) => void, allFiles?: Record<string, any>, onProposeMultiMerge?: (files: Record<string, string>) => void, chatMode: 'file' | 'project', setChatMode: (mode: 'file' | 'project') => void }) {
+export function OllamaChat({ 
+  onAddFile, 
+  activeFileId, 
+  activeProjectId, 
+  activeFilePath, 
+  activeFileContent, 
+  projectContext, 
+  onProposeMerge, 
+  input, 
+  setInput, 
+  allFiles, 
+  onProposeMultiMerge, 
+  chatMode, 
+  setChatMode,
+  onBeforeSend,
+  getLiveActiveFileContent,
+}: { 
+  onAddFile: (path: string, code: string) => void, 
+  activeFileId: string | null, 
+  activeProjectId: string | null, 
+  activeFilePath: string | null, 
+  activeFileContent: string | null, 
+  projectContext?: string | null, 
+  onProposeMerge: (code: string) => void, 
+  input: string, 
+  setInput: (v: string) => void, 
+  allFiles?: Record<string, any>, 
+  onProposeMultiMerge?: (files: Record<string, string>) => void, 
+  chatMode: 'file' | 'project', 
+  setChatMode: (mode: 'file' | 'project') => void,
+  onBeforeSend?: () => void,
+  getLiveActiveFileContent?: () => string | null,
+}) {
 
   const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>(() => {
     try {
@@ -468,14 +500,43 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
     }
   };
 
+  const handleClearHistory = async () => {
+    if (!actualTargetId) return;
+    setMessages([], actualTargetId);
+    try {
+      const stored = localStorage.getItem('ai_chat_history');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        delete parsed[actualTargetId];
+        localStorage.setItem('ai_chat_history', JSON.stringify(parsed));
+      }
+    } catch (e) {}
+
+    if (chatMode !== 'project' && actualTargetId) {
+      try {
+        await fetch(`/api/messages/${actualTargetId}`, { method: 'DELETE' });
+      } catch (e) {}
+    }
+  };
+
   const handleSend = async (text: string) => {
     const targetFileId = actualTargetId;
     if (!targetFileId || !text.trim() || isLoading) return;
+
+    // Trigger flush of any pending debounced editor updates before constructing prompt
+    if (onBeforeSend) {
+      try {
+        onBeforeSend();
+      } catch (e) {}
+    }
 
     const userMessage = text.trim();
     setInput('');
     setError(null, targetFileId);
     
+    // Always obtain freshest buffer from editor if available
+    const liveContent = getLiveActiveFileContent ? getLiveActiveFileContent() : activeFileContent;
+
     // Add file context to system prompt if available
     let promptPrefix = "";
     if (projectContext) {
@@ -485,12 +546,18 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
     if (chatMode === 'project') {
        promptPrefix += `[Project Mode Context: Below are the files in the current project.]\n`;
        if (allFiles) {
+           const seen = new Set<string>();
            Object.values(allFiles).forEach((f: any) => {
+               const norm = (f.path || '').replace(/^[./\\]+/, '').replace(/\\/g, '/');
+               if (seen.has(norm)) return;
+               seen.add(norm);
                if (f.path.endsWith('.v') || f.path.endsWith('.sv') || f.path.endsWith('.c') || f.path.endsWith('.cpp') || f.path.endsWith('.h') || f.path.endsWith('.tcl') || f.path.endsWith('.sdc') || f.path.endsWith('Makefile') || f.path.endsWith('.md')) {
-                 promptPrefix += `\n--- FILE: ${f.path} ---\n\`\`\`\n${f.content}\n\`\`\`\n--- END FILE ---\n`;
+                 const fileContent = (f.id === activeFileId && liveContent !== null && liveContent !== undefined) ? liveContent : f.content;
+                 promptPrefix += `\n--- FILE: ${f.path} ---\n\`\`\`\n${fileContent}\n\`\`\`\n--- END FILE ---\n`;
                }
            });
        }
+       promptPrefix += `\n[CRITICAL DIRECTIVE: The code provided above in [Project Mode Context] is the AUTHORITATIVE, REAL-TIME state of the user's workspace. Always use this code as the absolute ground truth. Disregard any older or differing versions seen in earlier chat history messages.]\n`;
        promptPrefix += `\n[Instruction: You are an AI assistant in "Project Mode". You can modify multiple files to implement the user's request. Output your modified files in the following XML format:\n<file path="path/to/file">\n// full new file content here\n</file>\nProvide your explanation first, then output the XML blocks.]\n\n`;
     } else {
         // Extract file references from the message (e.g. {verilog/src/file.v})
@@ -505,12 +572,13 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
             const theFile = Object.values(allFiles).find((f: any) => f.path === filePath || f.name === filePath);
             
             if (theFile) {
+               const refContent = (theFile.id === activeFileId && liveContent !== null && liveContent !== undefined) ? liveContent : theFile.content;
                if (!moduleName) {
-                   promptPrefix += `\n--- START OF REFERENCED FILE: ${theFile.path} ---\n\`\`\`\n${theFile.content}\n\`\`\`\n--- END OF REFERENCED FILE ---\n`;
+                   promptPrefix += `\n--- START OF REFERENCED FILE: ${theFile.path} ---\n\`\`\`\n${refContent}\n\`\`\`\n--- END OF REFERENCED FILE ---\n`;
                } else {
                    if (theFile.path.endsWith('.v') || theFile.path.endsWith('.sv')) {
                        try {
-                           const modules = parseVerilog(theFile.content);
+                           const modules = parseVerilog(refContent);
                            const mod = modules.find(m => m.name === moduleName);
                            if (mod) {
                                if (!signalName) {
@@ -532,8 +600,8 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
 
         if (activeFilePath) {
           promptPrefix += `[Context: User is currently working on file: ${activeFilePath}]\n`;
-          if (activeFileContent) {
-            promptPrefix += `[Current File Content:\n\`\`\`\n${activeFileContent}\n\`\`\`\n]\n[Instruction: Below is the user's request. Modify the code to fulfill the request. When providing the updated code, please output the FULL file content with your changes integrated, preserving the rest of the existing code so it can be directly merged. IMPORTANT: Provide your textual explanation FIRST, and output the final code block LAST.]\n\n`;
+          if (liveContent !== null && liveContent !== undefined) {
+            promptPrefix += `[Current File Content:\n\`\`\`\n${liveContent}\n\`\`\`\n]\n[CRITICAL DIRECTIVE: The code provided above in [Current File Content] is the EXACT LIVE editor buffer that the user is currently seeing on screen. Apply all your requested changes directly to this code. Completely ignore and disregard any older version of the file that may appear in previous chat turns.]\n[Instruction: Below is the user's request. Modify the code to fulfill the request. When providing the updated code, please output the FULL file content with your changes integrated, preserving the rest of the existing code so it can be directly merged. IMPORTANT: Provide your textual explanation FIRST, and output the final code block LAST.]\n\n`;
           }
         }
     }
@@ -658,6 +726,13 @@ export function OllamaChat({ onAddFile, activeFileId, activeProjectId, activeFil
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button 
+            onClick={handleClearHistory}
+            className="p-1.5 rounded-md transition-colors text-slate-400 hover:text-rose-400 hover:bg-rose-400/10"
+            title="Clear chat history for this context"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
           <button 
             onClick={() => setIsStorageModalOpen(true)}
             className="p-1.5 rounded-md transition-colors text-slate-400 hover:text-emerald-400 hover:bg-emerald-400/10"

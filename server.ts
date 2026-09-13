@@ -415,7 +415,31 @@ async function startServer() {
 
   app.get("/api/projects/:projectId/files", async (req, res) => {
     try {
-      const rows = db.prepare("SELECT * FROM files WHERE project_id = ?").all(req.params.projectId) as any[];
+      const allRows = db.prepare("SELECT * FROM files WHERE project_id = ? ORDER BY rowid DESC").all(req.params.projectId) as any[];
+      
+      // Deduplicate files by normalized path
+      const seenPaths = new Set<string>();
+      const rows: any[] = [];
+      const duplicateIdsToDelete: string[] = [];
+      
+      for (const row of allRows) {
+        const norm = (row.path || '').replace(/^[./\\]+/, '').replace(/\\/g, '/');
+        if (seenPaths.has(norm)) {
+          duplicateIdsToDelete.push(row.id);
+        } else {
+          seenPaths.add(norm);
+          rows.push(row);
+        }
+      }
+
+      if (duplicateIdsToDelete.length > 0) {
+        const delStmt = db.prepare("DELETE FROM files WHERE id = ?");
+        for (const dupId of duplicateIdsToDelete) {
+          try {
+            delStmt.run(dupId);
+          } catch (e) {}
+        }
+      }
       
       const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.projectId) as { id: string; name: string; custom_path?: string | null };
       if (!project) return res.json(rows);
@@ -469,6 +493,20 @@ async function startServer() {
       const reqIsLink = req.body.is_link;
       const is_link = reqIsLink === true || reqIsLink === 1 || reqIsLink === 'true' || reqIsLink === '1' ? 1 : 0;
       
+      // Clean up any other row with identical project_id and path to prevent duplicate file entries
+      if (filePath) {
+        try {
+          const norm = filePath.replace(/^[./\\]+/, '').replace(/\\/g, '/');
+          const existingDups = db.prepare("SELECT id FROM files WHERE project_id = ? AND (path = ? OR path = ?) AND id != ?").all(project_id, filePath, norm, id) as any[];
+          if (existingDups && existingDups.length > 0) {
+            const delStmt = db.prepare("DELETE FROM files WHERE id = ?");
+            for (const dup of existingDups) {
+              delStmt.run(dup.id);
+            }
+          }
+        } catch (e) {}
+      }
+
       db.prepare(`
         INSERT INTO files (id, name, path, type, content, project_id, is_link) 
         VALUES (?, ?, ?, ?, ?, ?, ?) 
@@ -553,6 +591,16 @@ async function startServer() {
       const { file_id, role, content } = req.body;
       const result = db.prepare("INSERT INTO messages (file_id, role, content) VALUES (?, ?, ?)").run(file_id, role, content);
       res.json({ success: true, messageId: result.lastInsertRowid });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete messages for a specific file
+  app.delete("/api/messages/:fileId", (req, res) => {
+    try {
+      db.prepare("DELETE FROM messages WHERE file_id = ?").run(req.params.fileId);
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1054,9 +1102,18 @@ async function startServer() {
 
   app.get('/api/git/status', async (req, res) => {
     try {
-      const { projectId = 'default' } = req.query;
-      const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId as string) as any;
-      if (!project) throw new Error("Project not found");
+      let projectId = req.query.projectId as string;
+      if (!projectId || projectId === 'undefined' || projectId === 'null') {
+        projectId = 'default';
+      }
+
+      let project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as any;
+      if (!project) {
+        project = db.prepare("SELECT * FROM projects WHERE id = 'default'").get() as any;
+      }
+      if (!project) {
+        return res.json({ isRepo: false, status: {} });
+      }
       
       const nodePath = await import('path');
       const fs = await import('fs/promises');
@@ -1082,7 +1139,7 @@ async function startServer() {
       res.json({ isRepo: true, status });
     } catch (err: any) {
       console.error('Git status error:', err);
-      res.status(500).json({ error: err.message });
+      res.json({ isRepo: false, status: {}, error: err.message });
     }
   });
 

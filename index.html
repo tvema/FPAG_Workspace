@@ -2,23 +2,107 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function() {
+        function isBenign(item) {
+          if (!item) return false;
+          if (typeof item === 'string') {
+            return (
+              item.includes('operation is manually canceled') ||
+              item.includes('cancelation') ||
+              item.includes('Canceled') ||
+              item.includes('ResizeObserver')
+            );
+          }
+          if (typeof item === 'object') {
+            if (item.type === 'cancelation') return true;
+            if (item.msg === 'operation is manually canceled') return true;
+            if (item.message && (
+              item.message.includes('operation is manually canceled') ||
+              item.message.includes('cancelation') ||
+              item.message === 'Canceled' ||
+              item.message.includes('ResizeObserver')
+            )) return true;
+            if (item.name === 'Canceled' || item.name === 'CancellationError') return true;
+            try {
+              var str = JSON.stringify(item);
+              if (str && (str.includes('operation is manually canceled') || str.includes('cancelation'))) {
+                return true;
+              }
+            } catch (e) {}
+          }
+          return false;
+        }
+
+        // 1. Intercept console.error and console.warn
+        var origError = console.error;
+        console.error = function() {
+          for (var i = 0; i < arguments.length; i++) {
+            if (isBenign(arguments[i])) return;
+          }
+          origError.apply(console, arguments);
+        };
+
+        var origWarn = console.warn;
+        console.warn = function() {
+          for (var i = 0; i < arguments.length; i++) {
+            if (isBenign(arguments[i])) return;
+          }
+          origWarn.apply(console, arguments);
+        };
+
+        // 2. Intercept unhandled promise rejections (capture phase)
+        window.addEventListener('unhandledrejection', function(event) {
+          if (isBenign(event.reason)) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation();
+            }
+          }
+        }, true);
+
+        // 3. Intercept error events (capture phase)
+        window.addEventListener('error', function(event) {
+          if (isBenign(event.error) || isBenign(event.message)) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation();
+            }
+          }
+        }, true);
+
+        // 4. Overwrite window.onerror and window.onunhandledrejection
+        var origOnError = window.onerror;
+        window.onerror = function(msg, source, lineno, colno, error) {
+          if (isBenign(msg) || isBenign(error)) {
+            return true;
+          }
+          if (typeof origOnError === 'function') {
+            return origOnError.apply(this, arguments);
+          }
+          return false;
+        };
+
+        var origOnUnhandledRejection = window.onunhandledrejection;
+        window.onunhandledrejection = function(event) {
+          if (event && isBenign(event.reason)) {
+            event.preventDefault();
+            return true;
+          }
+          if (typeof origOnUnhandledRejection === 'function') {
+            return origOnUnhandledRejection.apply(this, arguments);
+          }
+          return false;
+        };
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Verilog FPGA Dashboard</title>
     <meta name="description" content="A workspace template for Verilog development. Includes Makefiles for Icarus/GTKWave, test automation, and Quartus initialization for EP4CE55F23I7N." />
   </head>
   <body>
-    <script>
-      const originalError = console.error;
-      console.error = (...args) => {
-        if (typeof args[0] === 'string' && args[0].includes('ResizeObserver')) return;
-        originalError.call(console, ...args);
-      };
-      window.addEventListener('error', function(e) {
-        if (e.message.includes('ResizeObserver')) {
-          e.stopImmediatePropagation();
-        }
-      });
-    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

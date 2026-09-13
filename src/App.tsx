@@ -118,16 +118,30 @@ export default function App() {
   const fetchGitStatus = useCallback(async () => {
     if (!activeProject || document.hidden) return;
     try {
-      const res = await fetch(`/api/git/status?projectId=${activeProject}`);
-      if (res.ok) {
-        const data = await res.json();
-        setGitStatus((prev) => {
+      const res = await fetch(`/api/git/status?projectId=${encodeURIComponent(activeProject)}`);
+      if (!res.ok) return;
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        return;
+      }
+
+      const text = await res.text();
+      if (!text || !text.trim().startsWith("{")) {
+        return;
+      }
+
+      const data = JSON.parse(text);
+      if (data && data.isRepo !== undefined) {
+        setGitStatus((prev: any) => {
           if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
           return data;
         });
       }
-    } catch (e) {
-      console.error("Failed to fetch git status", e);
+    } catch (e: any) {
+      if (e?.name !== "AbortError") {
+        console.warn("Git status fetch skipped:", e?.message || e);
+      }
     }
   }, [activeProject]);
 
@@ -658,6 +672,9 @@ export default function App() {
 
 const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
     editorRef.current = editor;
+    try {
+      registerIntellisense(monaco);
+    } catch (e) {}
 
     editor.onMouseDown((e: any) => {
       if (e.event.ctrlKey || e.event.metaKey) {
@@ -687,6 +704,14 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
       autoIndent: editorSettings.autoIndent === false ? "none" : "advanced",
       formatOnType: true,
       acceptSuggestionOnEnter: "smart",
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: false,
+      },
+      suggestOnTriggerCharacters: true,
+      wordBasedSuggestions: "currentDocument",
+      snippetSuggestions: "inline",
       wordWrap: editorSettings.wordWrap,
       lineNumbers: editorSettings.lineNumbers,
       renderWhitespace: editorSettings.renderWhitespace,
@@ -707,6 +732,23 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
   );
 
   const handleEditorBeforeMount = useCallback((monaco: any) => {
+    if (monaco && monaco.errors && typeof monaco.errors.setUnexpectedErrorHandler === "function") {
+      monaco.errors.setUnexpectedErrorHandler((e: any) => {
+        if (
+          !e ||
+          e.type === "cancelation" ||
+          e.msg === "operation is manually canceled" ||
+          e.message === "operation is manually canceled" ||
+          e.name === "Canceled" ||
+          e.name === "CancellationError" ||
+          (typeof e === "string" && (e.includes("operation is manually canceled") || e.includes("cancelation")))
+        ) {
+          return;
+        }
+        console.error("Monaco unexpected error:", e);
+      });
+    }
+
     const sharedColors = {
       "editor.selectionHighlightBackground": "#ffb80060",
       "editor.selectionHighlightBorder": "#ffb800",
@@ -803,6 +845,7 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
     };
 
     const svLanguageConfig: any = {
+      wordPattern: /(-?\d*\.\d\w*)|([^\`\~\!\@\#\%\^\&\*\(\)\-\=\+\[\{\]\}\\\|\;\:\'\"\,\.\<\>\/\?\s]+)/g,
       comments: {
         lineComment: "//",
         blockComment: ["/*", "*/"]
@@ -838,6 +881,13 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
         }
       ]
     };
+
+    if (!monaco.languages.getLanguages().some((l: any) => l.id === "verilog")) {
+      monaco.languages.register({ id: "verilog" });
+    }
+    if (!monaco.languages.getLanguages().some((l: any) => l.id === "systemverilog")) {
+      monaco.languages.register({ id: "systemverilog" });
+    }
 
     monaco.languages.setLanguageConfiguration("systemverilog", svLanguageConfig);
     monaco.languages.setLanguageConfiguration("verilog", svLanguageConfig);
@@ -935,6 +985,24 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
   useEffect(() => {
     debouncedSetFilesData.flush();
   }, [activeFile, debouncedSetFilesData]);
+
+  const getLiveActiveFileContent = useCallback(() => {
+    if (editorRef.current && activeFile) {
+      try {
+        const val = editorRef.current.getValue();
+        if (typeof val === "string") return val;
+      } catch (e) {}
+    }
+    return filesData[activeFile]?.content || null;
+  }, [activeFile, filesData]);
+
+  const handleBeforeSendChat = useCallback(() => {
+    try {
+      if (debouncedSetFilesData && typeof (debouncedSetFilesData as any).flush === "function") {
+        (debouncedSetFilesData as any).flush();
+      }
+    } catch (e) {}
+  }, [debouncedSetFilesData]);
 
   const handleImportZip = () => {
     const input = document.createElement("input");
@@ -1298,11 +1366,20 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
       .then((res) => res.json())
       .then((data) => {
         if (data && data.length > 0) {
-          const parsed = data.reduce((acc: any, f: any) => {
+          // Deduplicate incoming files by normalized path to prevent duplicate files
+          const pathMap = new Map<string, any>();
+          data.forEach((f: any) => {
             f.is_link = Boolean(f.is_link);
-            acc[f.id] = f;
-            return acc;
-          }, {});
+            const norm = (f.path || f.name || f.id).replace(/^[./\\]+/, "").replace(/\\/g, "/");
+            if (!pathMap.has(norm) || (f.content && !pathMap.get(norm).content)) {
+              pathMap.set(norm, f);
+            }
+          });
+
+          const parsed: Record<string, any> = {};
+          pathMap.forEach((f) => {
+            parsed[f.id] = f;
+          });
 
           let aiContextExists = Object.values(parsed).some((f: any) =>
             f.path?.endsWith("ai_context.md"),
@@ -1337,13 +1414,28 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
             );
             if (cached) {
               const config = JSON.parse(cached);
-              const validTabs = (config.openedTabs || []).filter(
-                (id: string) => parsed[id],
-              );
+              const seenTabPaths = new Set<string>();
+              const validTabs: string[] = [];
+              for (const id of (config.openedTabs || [])) {
+                const file = parsed[id];
+                if (file) {
+                  const norm = (file.path || file.name || id).replace(/^[./\\]+/, "").replace(/\\/g, "/");
+                  if (!seenTabPaths.has(norm)) {
+                    seenTabPaths.add(norm);
+                    validTabs.push(id);
+                  }
+                }
+              }
+
               if (validTabs.length > 0) {
                 setOpenedTabs(validTabs);
+                let currentActive = config.activeFile;
+                if (currentActive && !parsed[currentActive]) {
+                  const matching = Object.values(parsed).find((f: any) => f.path === currentActive || f.name === currentActive);
+                  if (matching) currentActive = (matching as any).id;
+                }
                 setActiveFile(
-                  parsed[config.activeFile] ? config.activeFile : validTabs[0],
+                  parsed[currentActive] ? currentActive : validTabs[0],
                 );
                 if (config.collapsedDirs)
                   setCollapsedDirs(config.collapsedDirs);
@@ -1596,10 +1688,22 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
     openTab: boolean = true,
   ) => {
     const targetProj = projId || activeProject;
-    const id = `${targetProj}_${path.replace(/[^a-zA-Z0-9]/g, "_")}`;
-    const name = path.split("/").pop() || id;
-    const type = path.split(".").pop() || "txt";
-    const fileObj = { name, path, content, type, is_link };
+    const cleanPath = path.replace(/^[./\\]+/, '').replace(/\\/g, '/');
+
+    // Check if a file with the same normalized path already exists
+    let existingId: string | undefined;
+    for (const [fid, f] of Object.entries(filesData)) {
+      const fNorm = (f.path || f.name || fid).replace(/^[./\\]+/, '').replace(/\\/g, '/');
+      if (fNorm.toLowerCase() === cleanPath.toLowerCase()) {
+        existingId = fid;
+        break;
+      }
+    }
+
+    const id = existingId || `${targetProj}_${cleanPath.replace(/[^a-zA-Z0-9]/g, "_")}`;
+    const name = cleanPath.split("/").pop() || id;
+    const type = cleanPath.split(".").pop() || "txt";
+    const fileObj = { name, path: cleanPath, content, type, is_link };
 
     setFilesData((prev) => ({
       ...prev,
@@ -1607,7 +1711,16 @@ const handleEditorDidMount = React.useCallback((editor: any, monaco: any) => {
     }));
     if (openTab) {
       setActiveFile(id);
-      setOpenedTabs((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      setOpenedTabs((prev) => {
+        const filtered = prev.filter((tabId) => {
+          if (tabId === id) return false;
+          const tf = filesData[tabId];
+          if (!tf) return false;
+          const tfNorm = (tf.path || tf.name || tabId).replace(/^[./\\]+/, '').replace(/\\/g, '/');
+          return tfNorm.toLowerCase() !== cleanPath.toLowerCase();
+        });
+        return [...filtered, id];
+      });
     }
 
     if (targetProj && !is_link) await saveFileDirect(id, fileObj, targetProj);
@@ -1820,8 +1933,8 @@ int main(int argc, char** argv) {
           setGitMessageOpen(true);
         }
       } else {
-        const data = await res.json();
-        setGitMessageContent(`Error: ${data.error}`);
+        const data = await res.json().catch(() => ({ error: res.statusText }));
+        setGitMessageContent(`Error: ${data.error || "Unknown error"}`);
         setGitMessageOpen(true);
       }
     } catch (e) {
@@ -2287,6 +2400,8 @@ int main(int argc, char** argv) {
                   activeProjectId={activeProject}
                   activeFilePath={filesData[activeFile]?.path || null}
                   activeFileContent={filesData[activeFile]?.content || null}
+                  getLiveActiveFileContent={getLiveActiveFileContent}
+                  onBeforeSend={handleBeforeSendChat}
                   projectContext={
                     Object.values(filesData).find(
                       (f: any) =>
